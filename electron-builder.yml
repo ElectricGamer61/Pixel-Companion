@@ -1,0 +1,48 @@
+appId: dev.pixelcompanion.app
+productName: Pixel Companion
+copyright: Pixel Companion contributors
+
+directories:
+  output: release
+  buildResources: build
+
+# Only the compiled output ships. Sources, tests, and dev tooling stay out of
+# the installer.
+files:
+  - dist/**
+  - dist-electron/**
+  - package.json
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Utility
+  maintainer: Pixel Companion contributors
+  synopsis: Free local pixel-art desktop companion
+  description: >-
+    A free, offline, open-source pixel-art companion that lives on your desktop
+    for emotional support and gentle accountability. No accounts, no telemetry,
+    no cloud services.
+
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.lifestyle
+  # Unsigned by design: signing requires a paid Apple Developer account, and
+  # this project promises no paid dependencies. See the README for how users
+  # open an unsigned build.
+  identity: null
+
+win:
+  target:
+    - nsis
+    - portable
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  # Users should be able to remove it as easily as they installed it.
+  deleteAppDataOnUninstall: false

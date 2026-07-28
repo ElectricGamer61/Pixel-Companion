@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      Locked-down CSP: no remote code, no remote assets, no eval. The app is
+      fully offline unless the user explicitly enables the optional local model
+      endpoint, which is called from the main process.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
+    />
+    <title>Pixel Companion</title>
+  </head>
+  <body>
+    <div id="app">
+      <!-- Chat + settings panel. Sits above the character, bottom right. -->
+      <section id="panel" class="panel" data-interactive hidden aria-label="Companion panel">
+        <header class="panel__bar">
+          <h1 class="panel__title" id="panel-title">Pip</h1>
+          <nav class="panel__tabs">
+            <button type="button" id="tab-chat" class="tab is-active" aria-pressed="true">
+              Chat
+            </button>
+            <button type="button" id="tab-settings" class="tab" aria-pressed="false">
+              Settings
+            </button>
+          </nav>
+          <button type="button" id="panel-close" class="icon-button" aria-label="Close panel">
+            ×
+          </button>
+        </header>
+
+        <div id="chat-view" class="view">
+          <div id="log" class="log" role="log" aria-live="polite"></div>
+          <p id="status" class="status" hidden></p>
+          <form id="composer" class="composer" autocomplete="off">
+            <input
+              id="input"
+              class="composer__input"
+              type="text"
+              maxlength="500"
+              placeholder="Type how you're doing…"
+              aria-label="Message your companion"
+            />
+            <button type="button" id="mic" class="icon-button icon-button--mic" aria-label="Speak">
+              <!-- Inline pixel-grid microphone: no icon font, no remote asset. -->
+              <svg viewBox="0 0 9 11" width="13" height="16" aria-hidden="true" focusable="false">
+                <path
+                  fill="currentColor"
+                  d="M3 0h3v1H3zM2 1h5v1H2zM2 2h5v1H2zM2 3h5v1H2zM2 4h5v1H2zM1 5h1v1H1zM7 5h1v1H7zM1 6h1v1H1zM3 6h3v1H3zM7 6h1v1H7zM2 7h5v1H2zM4 8h1v1H4zM2 9h5v1H2z"
+                />
+              </svg>
+            </button>
+            <button type="submit" class="button button--send">Send</button>
+          </form>
+          <p class="disclaimer">
+            Emotional support and accountability only. Not therapy, medical, or crisis care.
+          </p>
+        </div>
+
+        <div id="settings-view" class="view" hidden>
+          <div class="settings">
+            <fieldset class="group">
+              <legend>Names</legend>
+              <label class="field">
+                <span>Your name</span>
+                <input type="text" id="set-user-name" maxlength="40" placeholder="(optional)" />
+              </label>
+              <label class="field">
+                <span>Companion name</span>
+                <input type="text" id="set-companion-name" maxlength="24" />
+              </label>
+            </fieldset>
+
+            <fieldset class="group">
+              <legend>Check-ins</legend>
+              <label class="field field--toggle">
+                <input type="checkbox" id="set-checkins-enabled" />
+                <span>Enable check-ins</span>
+              </label>
+              <label class="field field--toggle">
+                <input type="checkbox" id="set-morning-enabled" />
+                <span>Morning</span>
+                <input type="time" id="set-morning-time" />
+              </label>
+              <label class="field field--toggle">
+                <input type="checkbox" id="set-evening-enabled" />
+                <span>Evening</span>
+                <input type="time" id="set-evening-time" />
+              </label>
+              <label class="field field--toggle">
+                <input type="checkbox" id="set-interval-enabled" />
+                <span>Every</span>
+                <input type="number" id="set-interval-minutes" min="5" max="1440" step="5" />
+                <span class="unit">min</span>
+              </label>
+            </fieldset>
+
+            <fieldset class="group">
+              <legend>Voice</legend>
+              <label class="field field--toggle">
+                <input type="checkbox" id="set-speak-replies" />
+                <span>Speak replies aloud</span>
+              </label>
+              <label class="field">
+                <span>Voice</span>
+                <select id="set-voice-name"></select>
+              </label>
+              <label class="field">
+                <span>Rate</span>
+                <input type="range" id="set-voice-rate" min="0.5" max="2" step="0.1" />
+              </label>
+              <label class="field field--toggle">
+                <input type="checkbox" id="set-mic-enabled" />
+                <span>Show microphone button</span>
+              </label>
+              <p class="hint" id="voice-hint"></p>
+            </fieldset>
+
+            <fieldset class="group">
+              <legend>Appearance</legend>
+              <label class="field">
+                <span>Size</span>
+                <input type="range" id="set-scale" min="1" max="3" step="0.5" />
+              </label>
+              <label class="field field--toggle">
+                <input type="checkbox" id="set-always-on-top" />
+                <span>Always on top</span>
+              </label>
+            </fieldset>
+
+            <fieldset class="group">
+              <legend>Optional local model</legend>
+              <label class="field field--toggle">
+                <input type="checkbox" id="set-model-enabled" />
+                <span>Use a local model server</span>
+              </label>
+              <label class="field">
+                <span>Endpoint</span>
+                <input type="text" id="set-model-endpoint" spellcheck="false" />
+              </label>
+              <label class="field">
+                <span>Model</span>
+                <input type="text" id="set-model-name" spellcheck="false" />
+              </label>
+              <p class="hint">
+                Off by default. Point this at Ollama, llama.cpp, or LM Studio on your own machine.
+                If it is off or unreachable, the built-in offline replies are used.
+              </p>
+            </fieldset>
+
+            <fieldset class="group">
+              <legend>Privacy</legend>
+              <p class="hint">
+                No accounts, no telemetry, no cloud. Settings live in
+                <code id="data-dir">…</code>. Conversations are kept in memory only and are
+                never written to disk.
+              </p>
+            </fieldset>
+
+            <div class="settings__actions">
+              <button type="button" id="quit" class="button button--quiet">Quit companion</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Idle speech bubble shown for check-ins and greetings. -->
+      <div id="bubble" class="bubble" data-interactive hidden></div>
+
+      <div id="character" class="character" data-interactive title="Click to talk, drag to move">
+        <canvas id="sprite" class="character__canvas"></canvas>
+        <div id="zzz" class="zzz" hidden aria-hidden="true">
+          <span>z</span><span>z</span><span>z</span>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/renderer/main.ts"></script>
+  </body>
+</html>

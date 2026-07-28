@@ -1,6 +1,9 @@
 node_modules/
 dist/
+dist-electron/
 out/
+release/
 .env
 .DS_Store
 *.log
+settings.local.json
