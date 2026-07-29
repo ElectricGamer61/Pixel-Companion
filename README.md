@@ -146,7 +146,8 @@ For development with hot reload of the UI:
 npm run dev
 ```
 
-The companion appears in the bottom-right of your primary screen.
+The companion appears in the bottom-right of your primary screen, sunk half-way
+into the bottom edge so only its head peeks up.
 
 | Action | What happens |
 | --- | --- |
@@ -157,7 +158,8 @@ The companion appears in the bottom-right of your primary screen.
 | Settings → Appearance → Return to corner | Same, from the settings tab |
 | Type and press Enter | The companion replies |
 | `Esc` | Closes the panel |
-| Settings → Quit companion | Exits the app |
+| Panel header ⏻ button | Quits the app |
+| Settings → Quit companion | Same, from the settings tab |
 
 The rest of your desktop stays clickable: the window is transparent, and
 click-through is switched off only while the pointer is actually over the
@@ -165,17 +167,21 @@ character or the panel.
 
 ### Where it lives, and getting it back
 
-The companion's **home** is the bottom-right of your primary screen, and that is
-where it starts on first run — small, tucked into the corner, with the chat panel
-closed.
+The companion's **home** is the bottom-right of your primary screen, tucked
+half-way down into the bottom edge so only the top of its head shows. That is
+where it starts on first run, and it stays out of the way until you want it.
+
+Opening the chat slides the whole window into view for as long as the panel is
+open, then tucks it straight back when you close it, so the panel is never
+clipped by the screen edge.
 
 Drag the character to put it wherever you like; that position is remembered
 across restarts. Dragging only ever moves it: it never resizes the character, the
 chat panel, or the window, and it never opens the panel — only a real click does
 that. If it ends up somewhere awkward, any of the three "return to corner"
-actions above puts it straight back home and forgets the custom position, so the
-next launch starts in the corner too. It can never be dragged off the edge of the
-screen.
+actions above puts it straight back to the tucked home and forgets the custom
+position, so the next launch starts there too. It can never be dragged off the
+sides or the top of the screen.
 
 ## What the "AI" actually is
 

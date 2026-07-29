@@ -56,6 +56,17 @@ These are promises made to users in `README.md`, not preferences:
   `window:drag-start` and applies *total* offsets from the press point, which is
   idempotent. Every move restates the fixed window size, so a drag can never resize the
   overlay.
+- **Home is a deliberate half-off-screen tuck, and the panel has to undo it.** The
+  companion rests sunk `HOME_TUCK` into the bottom edge, so `clampToWorkArea` permits an
+  `OVERHANG` past the bottom — but only there, because a window stranded off the sides or
+  the top has nothing left to grab. The chat panel fills the window, so `window:panel`
+  slides it wholly on screen (`NO_OVERHANG`) while open and tucks straight back on close;
+  `peekPosition` in `electron/main.ts` holds the resting place meanwhile, and is what
+  `rememberPosition` persists. Placement is expressed in terms of `CHARACTER` — where the
+  sprite sits inside the mostly-empty window — not the window box, because the character
+  is what the user sees.
+- **Quitting must stay reachable from the panel header.** The window is frameless and
+  `skipTaskbar`, so the OS offers no way out; `#panel-quit` is it.
 - **Click-through is hit-tested per pointer move.** The window covers a rectangle of
   desktop and is `setIgnoreMouseEvents(true, { forward: true })` by default; the renderer
   flips it only while the pointer is over a `[data-interactive]` element. New interactive
@@ -69,20 +80,44 @@ These are promises made to users in `README.md`, not preferences:
 - Under WSLg, Electron logs GPU/`SharedImage` errors on startup. They are environmental
   noise, not app faults. Do not "fix" them by disabling the GPU — that changes how the
   transparent overlay renders.
-- **Always-on-top must be re-asserted, not set once.** `setVisibleOnAllWorkspaces` clears
-  the hint on Linux, and window managers drop it on map and on blur. `applyAlwaysOnTop`
-  in `electron/main.ts` is the single place that applies it; it only touches stacking, so
-  it never disturbs the click-through mouse mask.
+- **Always-on-top must be re-asserted on Linux, and only there.** `setVisibleOnAllWorkspaces`
+  clears the hint on Linux, and window managers drop it on map and on blur.
+  `applyAlwaysOnTop` in `electron/main.ts` is the single place that applies it; it only
+  touches stacking, so it never disturbs the click-through mouse mask. Off Linux it
+  returns early when the state already matches: there the call is a real
+  `SetWindowPos(HWND_TOPMOST)`, and the `blur` handler fires on every click into another
+  app — including while that app is still creating its window, which is how a topmost
+  overlay can leave a launching window stuck behind it.
 - **`package.json` needs `homepage`.** electron-builder's Debian target treats it as
   required metadata and the `.deb` build fails without it.
 
+## Icons
+
+`npm run icons` regenerates `build/icon.png` and `build/icon.ico` from the sprite data in
+`src/shared/sprite.ts`, so the app icon and the character can never drift apart. The
+generator (`scripts/generate-icons.mjs`) writes the PNG and ICO containers itself on top
+of Node's zlib — no image library, nothing downloaded — and reproduces the original
+hand-authored `build/icon.png` pixel for pixel.
+
+`electron-builder.yml` names `win.icon` explicitly. Without a real `.ico` the executable
+keeps Electron's default atom icon, which is what a desktop shortcut then shows. Because
+re-embedding that icon means repackaging the whole 270 MB app, every sync also drops the
+`.ico` beside the executable as `app-icon.ico` and points the shortcut's `IconLocation`
+there — same result, 100 KB instead of a rebuild.
+
 ## Iterating on the Windows app from WSL
+
+The installed Windows app lives in `Documents\CODEfold\PixelCompanionWin` (Windows
+resolves a Documents folder redirected into OneDrive by itself). `sync-windows-app.sh`
+finds it, falls back to the older `%USERPROFILE%\PixelCompanionWin`, and refreshes an
+existing desktop shortcut on every run so it can never point at a stale install.
 
 Never repackage to test a change on Windows. `scripts/sync-windows-app.sh`
 (`npm run win`) builds locally and replaces only `resources/app.asar` inside the
 installed app folder — ~100 KB out of ~270 MB, about two seconds, no download.
-The desktop shortcut keeps pointing at the same unchanged `.exe`, so it never
-needs updating. It packs with the same `asar` binary electron-builder uses, which
+The `.exe` itself never changes, so the shortcut keeps working; the sync only
+rewrites it to keep its target and icon honest. It packs with the same `asar`
+binary electron-builder uses, which
 is why the result is byte-shaped exactly like a real package; the unpacked
 `resources/app` fallback moves `app.asar` aside rather than relying on Electron's
 precedence between the two.
@@ -97,6 +132,21 @@ There is no headless screenshot tool in this environment. Launch the built app w
 (`Runtime.evaluate`, `Page.captureScreenshot`) from a throwaway Node script. That is how
 the layout and sprite regressions on this branch were actually found; unit tests alone
 did not surface them.
+
+Drive clicks and drags with `Input.dispatchMouseEvent`, not synthetic `PointerEvent`s:
+the drag handler calls `setPointerCapture`, which rejects a made-up `pointerId`, so a
+dispatched gesture silently does nothing. To see the companion *on the desktop* from
+WSL, screenshot Windows with `BitBlt` plus `CAPTUREBLT` (a transparent layered window is
+missing from a plain `CopyFromScreen`) after `SetProcessDPIAware` — Electron reports
+positions in DIPs while the capture works in physical pixels, and mixing the two lands
+you in the wrong corner.
+
+**Several `Pixel Companion.exe` processes in Task Manager is one running companion.**
+Electron always forks a GPU process, a utility process, and a renderer alongside main, so
+four entries is the healthy shape. `app.requestSingleInstanceLock()` in `electron/main.ts`
+keys on the per-user data directory and has held since the MVP: measured, six launches
+from the desktop shortcut produce exactly one main process. Look for more than one
+*main* (no `--type=` in its command line) before suspecting a pile-up.
 
 Two traps when testing from a git worktree:
 

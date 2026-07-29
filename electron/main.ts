@@ -4,7 +4,13 @@ import { join } from 'node:path';
 import { evaluateCheckIns } from '../src/shared/checkins';
 import { askLocalModel, type ChatMessage } from '../src/shared/llm';
 import type { AppSettings, VoiceSettings } from '../src/shared/types';
-import { clampToWorkArea, homePosition, type Point } from '../src/shared/window-position';
+import {
+  NO_OVERHANG,
+  OVERHANG,
+  clampToWorkArea,
+  homePosition,
+  type Point,
+} from '../src/shared/window-position';
 import {
   dataDirectory,
   loadCheckInState,
@@ -34,21 +40,45 @@ let schedulerTimer: NodeJS.Timeout | null = null;
  * the current position.
  */
 let dragOrigin: Point | null = null;
+/**
+ * Where to tuck back to when the chat panel closes, or `null` while it is shut.
+ *
+ * At home the companion hangs half off the right edge of the screen, but the
+ * panel is as wide as the whole window, so an open panel would be clipped by
+ * exactly that overhang. Opening it slides the window wholly on screen and
+ * remembers where it came from; closing it slides straight back.
+ */
+let peekPosition: Point | null = null;
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 
-/** The companion's home: bottom-right of the primary display's work area. */
+/** The companion's home: peeking out of the primary display's bottom-right. */
 function defaultPosition(): Point {
   return homePosition(screen.getPrimaryDisplay().workArea, WINDOW_SIZE);
 }
 
 /**
- * Keep the whole window on a display that actually exists. Monitors get
- * unplugged and a saved position can easily point off-screen.
+ * How far off the screen edge the window is currently allowed to hang: the
+ * tucked overhang normally, nothing at all while the panel needs to be read.
  */
-function clampToDisplay(position: Point): Point {
+function currentOverhang(): Point {
+  return peekPosition ? NO_OVERHANG : OVERHANG;
+}
+
+/**
+ * Keep the window on a display that actually exists. Monitors get unplugged and
+ * a saved position can easily point off-screen.
+ */
+function clampToDisplay(position: Point, overhang: Point = currentOverhang()): Point {
   const { workArea } = screen.getDisplayNearestPoint(position);
-  return clampToWorkArea(position, workArea, WINDOW_SIZE);
+  return clampToWorkArea(position, workArea, WINDOW_SIZE, overhang);
+}
+
+/** Where the window is right now, in screen coordinates. */
+function currentPosition(): Point | null {
+  if (!window || window.isDestroyed()) return null;
+  const [x, y] = window.getPosition();
+  return { x, y };
 }
 
 /**
@@ -57,9 +87,9 @@ function clampToDisplay(position: Point): Point {
  * `setBounds` re-states the fixed width and height on every move, so no window
  * manager quirk during a drag can leave the overlay resized.
  */
-function moveWindowTo(position: Point): void {
+function moveWindowTo(position: Point, overhang: Point = currentOverhang()): void {
   if (!window || window.isDestroyed()) return;
-  const next = clampToDisplay(position);
+  const next = clampToDisplay(position, overhang);
   window.setBounds({ ...next, ...WINDOW_SIZE });
 }
 
@@ -71,9 +101,18 @@ function moveWindowTo(position: Point): void {
  * `setVisibleOnAllWorkspaces` clears it outright, so the call order below
  * matters. Re-applying only touches stacking — it never focuses the window and
  * never changes the mouse-event mask, so click-through is unaffected.
+ *
+ * Everywhere else the re-assert is skipped when the state already matches. On
+ * Windows this call is a `SetWindowPos(HWND_TOPMOST)`, and the `blur` handler
+ * fires it every single time the user clicks another app — including while that
+ * app is still creating its window and negotiating the foreground, which is
+ * where a topmost overlay can leave a launching window stuck behind it. Linux
+ * is the exception because Electron's cached flag says nothing about what the
+ * window manager actually did.
  */
 function applyAlwaysOnTop(): void {
   if (!window || window.isDestroyed()) return;
+  if (process.platform !== 'linux' && window.isAlwaysOnTop() === settings.alwaysOnTop) return;
   if (settings.alwaysOnTop) {
     // 'floating' keeps the companion above normal windows without fighting
     // full-screen apps or system dialogs.
@@ -169,10 +208,12 @@ function createWindow(): void {
  * lands in the corner after the screen resolution changes.
  */
 function rememberPosition(): void {
-  if (!window || window.isDestroyed()) return;
-  const [x, y] = window.getPosition();
+  // While the panel is open the window is deliberately slid off its resting
+  // place, so the tucked position is the one worth saving.
+  const at = peekPosition ?? currentPosition();
+  if (!at) return;
   const home = defaultPosition();
-  settings.windowPosition = x === home.x && y === home.y ? null : { x, y };
+  settings.windowPosition = at.x === home.x && at.y === home.y ? null : { ...at };
   saveSettings(settings);
 }
 
@@ -227,16 +268,46 @@ function registerIpc(): void {
 
   ipcMain.handle('window:drag-end', () => {
     dragOrigin = null;
+    // Dragging with the panel open moves the resting place too, otherwise
+    // closing the panel would yank the companion back to where it started.
+    if (peekPosition) peekPosition = currentPosition();
     rememberPosition();
   });
 
-  // "Return to corner": go home and forget the custom position, so the next
-  // launch starts at home too.
+  // "Return to corner": tuck back into the corner and forget the custom
+  // position, so the next launch starts at home too.
   ipcMain.handle('window:home', () => {
     dragOrigin = null;
-    moveWindowTo(defaultPosition());
+    const home = defaultPosition();
+    if (peekPosition) {
+      // The panel is open and must stay readable, so slide only as far as the
+      // corner allows; the tuck happens when the panel closes.
+      peekPosition = home;
+      moveWindowTo(home, NO_OVERHANG);
+    } else {
+      moveWindowTo(home);
+    }
     settings.windowPosition = null;
     saveSettings(settings);
+  });
+
+  // The chat panel fills the window, so it cannot be read while the companion
+  // is tucked half off the screen. Slide fully on screen for as long as it is
+  // open, and tuck straight back afterwards.
+  ipcMain.handle('window:panel', (_event, open: boolean) => {
+    if (!window || window.isDestroyed()) return;
+    if (open) {
+      if (peekPosition) return;
+      const resting = currentPosition();
+      if (!resting) return;
+      peekPosition = resting;
+      moveWindowTo(resting, NO_OVERHANG);
+    } else {
+      const resting = peekPosition;
+      if (!resting) return;
+      peekPosition = null;
+      moveWindowTo(resting);
+    }
   });
 
   ipcMain.handle('window:interactive', (_event, interactive: boolean) => {
@@ -266,15 +337,27 @@ function registerIpc(): void {
   ipcMain.handle('app:quit', () => app.quit());
 }
 
-// A second launch should focus the existing companion, not spawn another one.
+// A second launch should surface the existing companion, not spawn another one.
+// The lock is keyed on the per-user data directory, so double-clicking the
+// desktop shortcut a dozen times still leaves exactly one main process (plus
+// Electron's usual GPU, utility, and renderer children — several
+// "Pixel Companion.exe" entries in Task Manager are one running companion, not
+// a pile-up).
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
-    if (window && !window.isDestroyed()) {
-      window.show();
-      window.focus();
+    // A companion whose window was somehow lost still has to answer the second
+    // launch with a visible character, or the app looks like it failed to open
+    // and the user keeps clicking.
+    if (!window || window.isDestroyed()) {
+      if (app.isReady()) createWindow();
+      return;
     }
+    if (window.isMinimized()) window.restore();
+    window.show();
+    window.focus();
+    applyAlwaysOnTop();
   });
 
   void app.whenReady().then(() => {

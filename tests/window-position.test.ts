@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CHARACTER,
   DRAG_THRESHOLD_PX,
   EDGE_MARGIN,
+  HOME_TUCK,
+  NO_OVERHANG,
+  OVERHANG,
   beginDrag,
   clampToWorkArea,
   homePosition,
@@ -18,26 +22,37 @@ const screen: Rect = { x: 0, y: 0, width: 1920, height: 1080 };
 const size = { width: 380, height: 520 };
 
 describe('homePosition', () => {
-  it('tucks the whole window into the bottom-right corner', () => {
-    expect(homePosition(screen, size)).toEqual({
-      x: 1920 - 380 - EDGE_MARGIN,
-      y: 1080 - 520 - EDGE_MARGIN,
-    });
+  /** The character's right edge in screen coordinates, given a window origin. */
+  const characterRight = (x: number): number => x + size.width - CHARACTER.right;
+  /** The character's feet in screen coordinates, given a window origin. */
+  const characterBottom = (y: number): number => y + size.height - CHARACTER.bottom;
+
+  it('sinks the companion half-way into the bottom edge, head still showing', () => {
+    const home = homePosition(screen, size);
+    expect(characterBottom(home.y) - screen.height).toBe(CHARACTER.height * HOME_TUCK);
+  });
+
+  it('keeps the companion wholly on screen sideways, near the right edge', () => {
+    const home = homePosition(screen, size);
+    // The tuck is downward only: nothing hides past the right edge.
+    expect(screen.width - characterRight(home.x)).toBe(EDGE_MARGIN);
+    expect(home.x).toBeGreaterThanOrEqual(screen.x);
   });
 
   it('respects a work area that is offset by panels or a taskbar', () => {
     const workArea: Rect = { x: 60, y: 28, width: 1800, height: 1000 };
-    expect(homePosition(workArea, size)).toEqual({
-      x: 60 + 1800 - 380 - EDGE_MARGIN,
-      y: 28 + 1000 - 520 - EDGE_MARGIN,
-    });
+    const home = homePosition(workArea, size);
+    expect(characterBottom(home.y) - (workArea.y + workArea.height)).toBe(
+      CHARACTER.height * HOME_TUCK,
+    );
+    expect(workArea.x + workArea.width - characterRight(home.x)).toBe(EDGE_MARGIN);
   });
 
-  it('gives up the margin rather than hanging off screen', () => {
-    // 400 - 380 - 24 would be -4, so the margin loses and the window stays
-    // fully visible.
+  it('gives up the tuck rather than stranding the window off screen', () => {
     const workArea: Rect = { x: 0, y: 0, width: 400, height: 560 };
-    expect(homePosition(workArea, size)).toEqual({ x: 0, y: 16 });
+    const home = homePosition(workArea, size);
+    expect(home.x).toBeGreaterThanOrEqual(0);
+    expect(home.y).toBeLessThanOrEqual(560 - size.height + OVERHANG.y);
   });
 
   it('never leaves the work area when it is smaller than the window', () => {
@@ -51,14 +66,36 @@ describe('clampToWorkArea', () => {
     expect(clampToWorkArea({ x: 400, y: 300 }, screen, size)).toEqual({ x: 400, y: 300 });
   });
 
-  it('keeps the whole window on screen, not just a corner of it', () => {
-    // The bug this guards: a window allowed to hang off the edge reads as a
-    // clipped blob rather than a companion sitting in the corner.
+  it('allows exactly the tuck overhang past the bottom edge, and none sideways', () => {
     expect(clampToWorkArea({ x: 5000, y: 5000 }, screen, size)).toEqual({
+      x: 1920 - 380,
+      y: 1080 - 520 + OVERHANG.y,
+    });
+  });
+
+  it('never lets the window escape past the left or top edge', () => {
+    // Nothing peeks out of those edges, and a window stranded up there would be
+    // unreachable: there is no visible part left to grab.
+    expect(clampToWorkArea({ x: -900, y: -900 }, screen, size)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('keeps the whole window on screen when asked for no overhang', () => {
+    // What the open chat panel needs: the panel fills the window, so any
+    // overhang clips it.
+    expect(clampToWorkArea({ x: 5000, y: 5000 }, screen, size, NO_OVERHANG)).toEqual({
       x: 1920 - 380,
       y: 1080 - 520,
     });
-    expect(clampToWorkArea({ x: -900, y: -900 }, screen, size)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('brings a tucked window fully back on screen for the panel', () => {
+    const home = homePosition(screen, size);
+    const opened = clampToWorkArea(home, screen, size, NO_OVERHANG);
+    expect(opened.y).toBeLessThan(home.y);
+    expect(opened.y + size.height).toBeLessThanOrEqual(screen.height);
+    expect(opened.x + size.width).toBeLessThanOrEqual(screen.width);
+    // ...and closing it tucks straight back to where it came from.
+    expect(clampToWorkArea(home, screen, size)).toEqual(home);
   });
 
   it('rounds to whole pixels', () => {
@@ -141,7 +178,7 @@ describe('drag gestures', () => {
     expect(Object.keys(offset ?? {}).sort()).toEqual(['x', 'y']);
   });
 
-  it('cannot drag the companion off screen', () => {
+  it('cannot drag the companion further than the tuck off screen', () => {
     const gesture = beginDrag(0, 0);
     const offset = trackDrag(gesture, 9000, 9000);
     const origin = homePosition(screen, size);
@@ -150,12 +187,18 @@ describe('drag gestures', () => {
       screen,
       size,
     );
-    expect(landed).toEqual({ x: 1920 - 380, y: 1080 - 520 });
+    expect(landed).toEqual({
+      x: 1920 - 380,
+      y: 1080 - 520 + OVERHANG.y,
+    });
   });
 
-  it('returns home to exactly the first-run position after any drag', () => {
+  it('returns home to exactly the first-run peeking position after any drag', () => {
     const gesture = beginDrag(0, 0);
     trackDrag(gesture, -700, -400);
-    expect(homePosition(screen, size)).toEqual({ x: 1516, y: 536 });
+    expect(homePosition(screen, size)).toEqual({
+      x: 1920 - 380 + CHARACTER.right - EDGE_MARGIN,
+      y: 1080 - 520 + OVERHANG.y,
+    });
   });
 });

@@ -18,23 +18,68 @@ export interface Size {
 
 export interface Rect extends Point, Size {}
 
-/** Gap kept between the window and the screen edges when it sits at home. */
-export const EDGE_MARGIN = 24;
-
 /** Pointer travel from the press point that turns a click into a drag. */
 export const DRAG_THRESHOLD_PX = 4;
 
 /**
- * The companion's home: tucked into the bottom-right of the work area.
+ * Where the character sits inside the transparent window, in window pixels.
+ *
+ * The window is mostly empty space reserved for the chat panel; the blob itself
+ * is a 16x16 sprite at 6 screen pixels each, pinned to the bottom-right by the
+ * renderer's flex layout. Home placement is expressed in terms of the
+ * *character*, not the window, because that is what the user actually sees.
+ */
+export const CHARACTER = {
+  width: 96,
+  height: 96,
+  /** Gap from the window's right edge to the character's right edge. */
+  right: 10,
+  /** Gap from the window's bottom edge to the character's feet. */
+  bottom: 18,
+} as const;
+
+/** Gap kept between the character and the right edge when it sits at home. */
+export const EDGE_MARGIN = 24;
+
+/**
+ * How much of the character hides below the screen edge when it sits at home.
+ *
+ * Half, downwards: the companion sinks into the bottom of the screen with its
+ * head still poking up, so it takes up less room while idle and reads as
+ * peeking rather than floating in front of the desktop.
+ */
+export const HOME_TUCK = 0.5;
+
+/**
+ * How far the window may hang past the bottom edge of the work area.
+ *
+ * Exactly enough for the tucked home and no further, so a saved position from
+ * an unplugged monitor is still dragged back into reach. The other three edges
+ * never overhang: the companion peeks up out of the bottom, and a window
+ * stranded sideways or above would have nothing left to grab.
+ */
+export const OVERHANG: Point = {
+  x: 0,
+  y: Math.round(CHARACTER.bottom + CHARACTER.height * HOME_TUCK),
+};
+
+/** Overhang for states that must stay wholly on screen, such as an open panel. */
+export const NO_OVERHANG: Point = { x: 0, y: 0 };
+
+/**
+ * The companion's home: the bottom-right area, sunk half-way into the bottom
+ * edge of the screen so only its head peeks up.
  *
  * This is the default on first run and the target of "Return to corner", so the
  * two can never drift apart.
  */
-export function homePosition(workArea: Rect, size: Size, margin = EDGE_MARGIN): Point {
+export function homePosition(workArea: Rect, size: Size): Point {
   return clampToWorkArea(
     {
-      x: workArea.x + workArea.width - size.width - margin,
-      y: workArea.y + workArea.height - size.height - margin,
+      // Horizontally the companion stays wholly on screen, a margin in from the
+      // right edge — only the vertical tuck hides anything.
+      x: workArea.x + workArea.width - size.width + CHARACTER.right - EDGE_MARGIN,
+      y: workArea.y + workArea.height - size.height + OVERHANG.y,
     },
     workArea,
     size,
@@ -42,17 +87,22 @@ export function homePosition(workArea: Rect, size: Size, margin = EDGE_MARGIN): 
 }
 
 /**
- * Keep the whole window inside the work area.
+ * Keep the window inside the work area, give or take a deliberate overhang.
  *
- * Clamping the *whole* window rather than just a sliver of it is deliberate: a
- * companion half off the screen reads as a broken blob, and a saved position
- * from an unplugged monitor would otherwise strand it out of reach.
+ * The overhang is what lets the companion tuck into the corner; everything
+ * beyond it is clamped, so a window can never be stranded off screen. Pass
+ * `NO_OVERHANG` for states where the whole window has to be readable.
  */
-export function clampToWorkArea(position: Point, workArea: Rect, size: Size): Point {
+export function clampToWorkArea(
+  position: Point,
+  workArea: Rect,
+  size: Size,
+  overhang: Point = OVERHANG,
+): Point {
   // A work area smaller than the window can't satisfy both edges; pin to the
   // top-left corner rather than emitting a negative range.
-  const maxX = Math.max(workArea.x, workArea.x + workArea.width - size.width);
-  const maxY = Math.max(workArea.y, workArea.y + workArea.height - size.height);
+  const maxX = Math.max(workArea.x, workArea.x + workArea.width - size.width + overhang.x);
+  const maxY = Math.max(workArea.y, workArea.y + workArea.height - size.height + overhang.y);
   return {
     x: Math.round(Math.min(Math.max(position.x, workArea.x), maxX)),
     y: Math.round(Math.min(Math.max(position.y, workArea.y), maxY)),

@@ -46,6 +46,26 @@
           <button type="button" id="panel-close" class="icon-button" aria-label="Close panel">
             ×
           </button>
+          <!--
+            Quitting has to be reachable without hunting through Settings: the
+            companion has no taskbar entry and no window frame, so this header
+            is the only place a user can look.
+          -->
+          <button
+            type="button"
+            id="panel-quit"
+            class="icon-button icon-button--quit"
+            aria-label="Quit Pixel Companion"
+            title="Quit Pixel Companion"
+          >
+            <!-- Inline pixel-grid power symbol: no icon font, no remote asset. -->
+            <svg viewBox="0 0 11 11" width="13" height="13" aria-hidden="true" focusable="false">
+              <path
+                fill="currentColor"
+                d="M5 0h1v5H5zM3 1h1v1H3zM7 1h1v1H7zM2 2h1v1H2zM8 2h1v1H8zM1 3h1v3H1zM9 3h1v3H9zM2 6h1v2H2zM8 6h1v2H8zM3 8h1v1H3zM7 8h1v1H7zM4 9h3v1H4z"
+              />
+            </svg>
+          </button>
         </header>
 
         <div id="chat-view" class="view">

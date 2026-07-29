@@ -154,6 +154,13 @@ body {
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* Quit sits next to "close panel" and does something far less reversible, so it
+   reads as the odd one out on hover rather than as another dismiss button. */
+.icon-button--quit:hover {
+  color: #ffd7de;
+  background: rgba(255, 122, 154, 0.22);
+}
+
 .view {
   flex: 1 1 auto;
   min-height: 0;

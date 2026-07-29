@@ -41,6 +41,7 @@ const dom = {
   sprite: element<HTMLCanvasElement>('sprite'),
   zzz: element('zzz'),
   quit: element<HTMLButtonElement>('quit'),
+  panelQuit: element<HTMLButtonElement>('panel-quit'),
   dataDir: element('data-dir'),
   voiceHint: element('voice-hint'),
 };
@@ -292,6 +293,10 @@ dom.input.addEventListener('input', () => {
 function setPanelOpen(open: boolean): void {
   panelOpen = open;
   dom.panel.hidden = !open;
+  // At rest the companion peeks out of the corner with half of itself off the
+  // screen; the panel is window-wide, so the window has to come fully into view
+  // for as long as it is open.
+  void bridge.setPanelOpen(open);
   markInteraction();
   if (open) {
     dom.bubble.hidden = true;
@@ -498,7 +503,10 @@ for (const field of Object.values(fields)) {
   field.addEventListener('change', () => void persist());
 }
 
+// Two ways out on purpose: the labelled button in Settings for anyone reading
+// through it, and the header icon for anyone who just wants the companion gone.
 dom.quit.addEventListener('click', () => void bridge.quit());
+dom.panelQuit.addEventListener('click', () => void bridge.quit());
 
 /* ------------------------------------------------------------- start-up - */
 

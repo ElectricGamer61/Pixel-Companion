@@ -39,8 +39,15 @@ win:
   target:
     - nsis
     - portable
+  # Named explicitly rather than left to buildResources auto-detection: without
+  # a real .ico the executable keeps Electron's default atom icon, and that is
+  # what the desktop shortcut ends up showing. Regenerate with
+  # `npm run icons`.
+  icon: build/icon.ico
 
 nsis:
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

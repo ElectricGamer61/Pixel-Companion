@@ -17,6 +17,7 @@
     "build:renderer": "vite build",
     "start": "npm run build && electron .",
     "win": "bash scripts/sync-windows-app.sh --launch",
+    "icons": "npm run build:main && node scripts/generate-icons.mjs",
     "package": "npm run build && electron-builder",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.main.json --noEmit",
     "test": "vitest run",

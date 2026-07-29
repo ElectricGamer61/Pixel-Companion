@@ -14,6 +14,8 @@ export interface Bridge {
   dragWindowTo(dx: number, dy: number): Promise<void>;
   endDrag(): Promise<void>;
   goHome(): Promise<void>;
+  /** Slide fully on screen while the panel is open, tuck back when it closes. */
+  setPanelOpen(open: boolean): Promise<void>;
   setInteractive(interactive: boolean): Promise<void>;
   nativeSpeechAvailable(): Promise<boolean>;
   speakNative(text: string, voice: VoiceSettings): Promise<boolean>;
@@ -47,6 +49,7 @@ function browserFallback(): Bridge {
     dragWindowTo: async () => undefined,
     endDrag: async () => undefined,
     goHome: async () => undefined,
+    setPanelOpen: async () => undefined,
     setInteractive: async () => undefined,
     nativeSpeechAvailable: async () => false,
     speakNative: async () => false,

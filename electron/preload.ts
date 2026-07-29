@@ -25,6 +25,9 @@ const api = {
 
   goHome: (): Promise<void> => ipcRenderer.invoke('window:home'),
 
+  /** Tell the main process to slide fully on screen while the panel is open. */
+  setPanelOpen: (open: boolean): Promise<void> => ipcRenderer.invoke('window:panel', open),
+
   setInteractive: (interactive: boolean): Promise<void> =>
     ipcRenderer.invoke('window:interactive', interactive),
 

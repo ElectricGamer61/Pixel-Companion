@@ -11,12 +11,16 @@
 #
 #   ./scripts/sync-windows-app.sh              # build, sync, done
 #   ./scripts/sync-windows-app.sh --launch     # ...and start the app afterwards
-#   ./scripts/sync-windows-app.sh --shortcut   # ...and refresh the desktop shortcut
+#   ./scripts/sync-windows-app.sh --shortcut   # ...and create the desktop shortcut
 #   ./scripts/sync-windows-app.sh --bootstrap  # first time only: create the app folder
 #   ./scripts/sync-windows-app.sh --dir '<windows or wsl path>'   # non-default location
 #
-# Run it from WSL. The app folder defaults to %USERPROFILE%\PixelCompanionWin,
-# or whatever PIXEL_COMPANION_WIN_DIR is set to.
+# Every sync also refreshes the app's icon file, and refreshes an existing
+# desktop shortcut so it keeps pointing at this install with the right picture.
+#
+# Run it from WSL. The app folder defaults to Documents\CODEfold\PixelCompanionWin
+# (Windows follows a Documents folder redirected into OneDrive by itself), or to
+# whatever PIXEL_COMPANION_WIN_DIR is set to.
 #
 # Nothing is downloaded except by --bootstrap, which fetches the Windows
 # Electron runtime once. Nothing here needs a paid service.
@@ -76,10 +80,27 @@ to_wsl_path() {
 }
 
 if [ -z "$TARGET_DIR" ]; then
-  USER_PROFILE="$(powershell.exe -NoProfile -NonInteractive -Command \
-    '[Environment]::GetFolderPath("UserProfile")' 2>/dev/null | tr -d '\r')"
-  [ -n "$USER_PROFILE" ] || die "Could not ask Windows where your user folder is. Pass --dir instead."
-  TARGET_DIR="$(wslpath -u "$USER_PROFILE")/PixelCompanionWin"
+  # Ask Windows for both candidate roots in one call: the projects folder under
+  # Documents (which follows a Documents folder redirected into OneDrive), and
+  # the older %USERPROFILE% location. An existing install wins, so this never
+  # silently strands the app the desktop shortcut already points at.
+  WIN_ROOTS="$(powershell.exe -NoProfile -NonInteractive -Command \
+    '[Environment]::GetFolderPath("MyDocuments") + "|" + [Environment]::GetFolderPath("UserProfile")' \
+    2>/dev/null | tr -d '\r')"
+  DOCUMENTS_DIR="${WIN_ROOTS%%|*}"
+  USER_PROFILE="${WIN_ROOTS##*|}"
+  [ -n "$DOCUMENTS_DIR" ] && [ -n "$USER_PROFILE" ] ||
+    die "Could not ask Windows where your user folders are. Pass --dir instead."
+
+  CODEFOLD_DIR="$(wslpath -u "$DOCUMENTS_DIR")/CODEfold/PixelCompanionWin"
+  LEGACY_DIR="$(wslpath -u "$USER_PROFILE")/PixelCompanionWin"
+  if [ -f "$CODEFOLD_DIR/Pixel Companion.exe" ]; then
+    TARGET_DIR="$CODEFOLD_DIR"
+  elif [ -f "$LEGACY_DIR/Pixel Companion.exe" ]; then
+    TARGET_DIR="$LEGACY_DIR"
+  else
+    TARGET_DIR="$CODEFOLD_DIR"
+  fi
 else
   TARGET_DIR="$(to_wsl_path "$TARGET_DIR")"
 fi
@@ -139,18 +160,52 @@ fi
 
 log "Synced your changes into $TARGET_DIR."
 
-# --- 4. Optional extras ------------------------------------------------------
-if [ "$SHORTCUT" -eq 1 ]; then
-  powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
-    -File "$(wslpath -w "$PROJECT_DIR/scripts/install-windows-shortcut.ps1")" \
-    -AppExe "$(wslpath -w "$APP_EXE")" | tr -d '\r'
+# --- 4. The app's own icon ---------------------------------------------------
+# The executable's embedded icon can only change by repackaging, which is the
+# 270 MB round trip this whole script exists to avoid. Shipping the .ico as a
+# plain file beside it costs 100 KB and is what the desktop shortcut points at,
+# so the companion's face is what the user actually sees either way.
+ICON_SOURCE="$PROJECT_DIR/build/icon.ico"
+APP_ICON="$TARGET_DIR/app-icon.ico"
+if [ -f "$ICON_SOURCE" ]; then
+  cp -f "$ICON_SOURCE" "$APP_ICON"
+else
+  log "No build/icon.ico found; run 'npm run icons' to regenerate it."
 fi
 
+# --- 5. Desktop shortcut -----------------------------------------------------
+# Created on request, but always refreshed when it already exists: a shortcut
+# left pointing at an old install, or at the executable's stock Electron icon,
+# is exactly the confusion this avoids.
+DESKTOP_DIR="$(powershell.exe -NoProfile -NonInteractive -Command \
+  '[Environment]::GetFolderPath("Desktop")' 2>/dev/null | tr -d '\r')"
+SHORTCUT_EXISTS=0
+if [ -n "$DESKTOP_DIR" ] && [ -f "$(wslpath -u "$DESKTOP_DIR")/Pixel Companion.lnk" ]; then
+  SHORTCUT_EXISTS=1
+fi
+
+if [ "$SHORTCUT" -eq 1 ] || [ "$SHORTCUT_EXISTS" -eq 1 ]; then
+  powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
+    -File "$(wslpath -w "$PROJECT_DIR/scripts/install-windows-shortcut.ps1")" \
+    -AppExe "$(wslpath -w "$APP_EXE")" \
+    -IconFile "$(wslpath -w "$APP_ICON")" | tr -d '\r'
+fi
+
+# --- 6. Optionally start it --------------------------------------------------
 if [ "$LAUNCH" -eq 1 ]; then
-  log "Starting Pixel Companion. Look for the character in the bottom-right of your screen."
-  # Detached, so closing this terminal does not close the companion.
-  powershell.exe -NoProfile -NonInteractive -Command \
-    "Start-Process -FilePath '$(wslpath -w "$APP_EXE")'" >/dev/null
+  # The app takes a single-instance lock, so a second launch would quit on the
+  # spot. Saying so beats starting a process that silently disappears — and the
+  # already-running companion is still on the old code until it is restarted.
+  if powershell.exe -NoProfile -NonInteractive -Command \
+    "if (Get-Process -Name 'Pixel Companion' -ErrorAction SilentlyContinue) { 'yes' }" 2>/dev/null |
+    grep -q yes; then
+    log "Pixel Companion is already running. Close it and re-run to pick up this sync."
+  else
+    log "Starting Pixel Companion. Look for its head peeking up from the bottom-right corner."
+    # Detached, so closing this terminal does not close the companion.
+    powershell.exe -NoProfile -NonInteractive -Command \
+      "Start-Process -FilePath '$(wslpath -w "$APP_EXE")'" >/dev/null
+  fi
 else
   log "Open it from your desktop shortcut, or re-run with --launch."
 fi
