@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { detectIntent, openingLine, respond, systemPrompt } from '../src/shared/responder';
+import { detectIntent, homeLine, openingLine, respond, systemPrompt } from '../src/shared/responder';
 import type { ResponderContext } from '../src/shared/responder';
 
 const ctx = (overrides: Partial<ResponderContext> = {}): ResponderContext => ({
@@ -138,6 +138,29 @@ describe('openingLine', () => {
       const line = openingLine(ctx({ hour }));
       expect(line.length).toBeGreaterThan(0);
       expect(line).not.toMatch(/\{\w+\}/);
+    }
+  });
+});
+
+describe('homeLine', () => {
+  it('stays a glance, not a message', () => {
+    const seen = new Set<string>();
+    for (let turn = 0; turn < 24; turn += 1) {
+      const line = homeLine(turn);
+      seen.add(line);
+      // Tucked in the corner the companion is furniture with a pulse: a few
+      // words, no question, and nothing for the user to have to answer.
+      expect(line.length, line).toBeLessThanOrEqual(20);
+      expect(line, line).not.toContain('?');
+      expect(line).not.toMatch(/\{\w+\}/);
+    }
+    expect(seen.size).toBeGreaterThan(1);
+  });
+
+  it('is stable for a given turn and safe for any turn', () => {
+    expect(homeLine(3)).toBe(homeLine(3));
+    for (const turn of [-7, 0, 1.5, 10_000]) {
+      expect(typeof homeLine(turn)).toBe('string');
     }
   });
 });

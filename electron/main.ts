@@ -49,6 +49,11 @@ let dragOrigin: Point | null = null;
  * remembers where it came from; closing it slides straight back.
  */
 let peekPosition: Point | null = null;
+/**
+ * The last position the window was asked to take, which is the only reliable
+ * answer to "where is it?" — see `currentPosition`.
+ */
+let placedPosition: Point | null = null;
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 
@@ -74,11 +79,19 @@ function clampToDisplay(position: Point, overhang: Point = currentOverhang()): P
   return clampToWorkArea(position, workArea, WINDOW_SIZE, overhang);
 }
 
-/** Where the window is right now, in screen coordinates. */
+/**
+ * Where the window is, in screen coordinates.
+ *
+ * This is the position we last *asked* for, not `window.getPosition()`. The
+ * window manager applies moves asynchronously, so a read straight after a move
+ * — including the very first placement at start-up, which reports (32, 32)
+ * under WSLg until the compositor catches up — is routinely stale. Every move
+ * goes through `moveWindowTo`, which clamps first, so the latched value is
+ * exactly where the window is heading and never drifts.
+ */
 function currentPosition(): Point | null {
   if (!window || window.isDestroyed()) return null;
-  const [x, y] = window.getPosition();
-  return { x, y };
+  return placedPosition ? { ...placedPosition } : null;
 }
 
 /**
@@ -90,6 +103,7 @@ function currentPosition(): Point | null {
 function moveWindowTo(position: Point, overhang: Point = currentOverhang()): void {
   if (!window || window.isDestroyed()) return;
   const next = clampToDisplay(position, overhang);
+  placedPosition = next;
   window.setBounds({ ...next, ...WINDOW_SIZE });
 }
 
@@ -124,6 +138,7 @@ function applyAlwaysOnTop(): void {
 
 function createWindow(): void {
   const position = clampToDisplay(settings.windowPosition ?? defaultPosition());
+  placedPosition = position;
 
   window = new BrowserWindow({
     ...WINDOW_SIZE,
@@ -201,6 +216,32 @@ function createWindow(): void {
 }
 
 /**
+ * Where the companion rests: its tucked place, even while the panel has slid it
+ * temporarily on screen.
+ */
+function restingPosition(): Point | null {
+  return peekPosition ?? currentPosition();
+}
+
+/** Whether the companion is sitting in its corner rather than somewhere the user dragged it. */
+function isAtHome(): boolean {
+  const at = restingPosition();
+  if (!at) return false;
+  const home = defaultPosition();
+  return at.x === home.x && at.y === home.y;
+}
+
+/**
+ * Tell the renderer whether the companion is tucked at home, so it can wear its
+ * peeking face there and its ordinary face anywhere else. Only the main process
+ * knows where the window actually is, so this is the one source of truth.
+ */
+function sendPlacement(): void {
+  if (!window || window.isDestroyed()) return;
+  window.webContents.send('companion:placement', { home: isAtHome() });
+}
+
+/**
  * Persist the window's current position so it reopens where the user left it.
  *
  * Sitting at home is stored as "no custom position" rather than as today's
@@ -210,10 +251,9 @@ function createWindow(): void {
 function rememberPosition(): void {
   // While the panel is open the window is deliberately slid off its resting
   // place, so the tucked position is the one worth saving.
-  const at = peekPosition ?? currentPosition();
+  const at = restingPosition();
   if (!at) return;
-  const home = defaultPosition();
-  settings.windowPosition = at.x === home.x && at.y === home.y ? null : { ...at };
+  settings.windowPosition = isAtHome() ? null : { ...at };
   saveSettings(settings);
 }
 
@@ -252,10 +292,12 @@ function registerIpc(): void {
     return settings;
   });
 
+  // Asked once at boot: a renderer that started after the window was placed has
+  // no event to have missed, so it reads the state instead of waiting for one.
+  ipcMain.handle('window:placement', () => ({ home: isAtHome() }));
+
   ipcMain.handle('window:drag-start', () => {
-    if (!window || window.isDestroyed()) return;
-    const [x, y] = window.getPosition();
-    dragOrigin = { x, y };
+    dragOrigin = currentPosition();
   });
 
   // `dx`/`dy` are the pointer's total travel since the press, not an increment.
@@ -272,6 +314,7 @@ function registerIpc(): void {
     // closing the panel would yank the companion back to where it started.
     if (peekPosition) peekPosition = currentPosition();
     rememberPosition();
+    sendPlacement();
   });
 
   // "Return to corner": tuck back into the corner and forget the custom
@@ -289,6 +332,7 @@ function registerIpc(): void {
     }
     settings.windowPosition = null;
     saveSettings(settings);
+    sendPlacement();
   });
 
   // The chat panel fills the window, so it cannot be read while the companion

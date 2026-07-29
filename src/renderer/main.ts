@@ -1,7 +1,13 @@
 import './styles.css';
 
-import { openingLine, respond, systemPrompt } from '../shared/responder';
-import type { AppSettings, CheckInEvent, CompanionMood, CompanionReply } from '../shared/types';
+import { homeLine, openingLine, respond, systemPrompt } from '../shared/responder';
+import type {
+  AppSettings,
+  CheckInEvent,
+  CompanionMood,
+  CompanionReply,
+  PlacementEvent,
+} from '../shared/types';
 import { beginDrag, isClick, trackDrag, type DragGesture } from '../shared/window-position';
 import { bridge, isDesktop } from './bridge';
 import { Character } from './character';
@@ -11,6 +17,10 @@ import { SpeechInput, SpeechOutput } from './speech';
 const SLEEP_AFTER_MS = 5 * 60_000;
 /** How long a reply-specific mood (happy, thinking) sticks before settling. */
 const MOOD_HOLD_MS = 2600;
+/** How long the greeting pose and its little home line stay up. */
+const GREET_MS = 2400;
+/** How long the home line lingers after the pointer leaves. */
+const PEEK_LINGER_MS = 900;
 /** Conversation turns kept in memory for the optional local model. */
 const HISTORY_LIMIT = 12;
 
@@ -37,6 +47,7 @@ const dom = {
   input: element<HTMLInputElement>('input'),
   mic: element<HTMLButtonElement>('mic'),
   bubble: element('bubble'),
+  peek: element('peek'),
   character: element('character'),
   sprite: element<HTMLCanvasElement>('sprite'),
   zzz: element('zzz'),
@@ -59,14 +70,34 @@ let interactive = false;
 let history: { role: string; content: string }[] = [];
 let greeted = false;
 let pendingReply = false;
+/**
+ * Whether the companion is tucked in its corner. The main process owns the real
+ * window, so this only ever changes on a placement event from it.
+ */
+let atHome = false;
+let hovering = false;
+/** Rotates the little home lines so the same one is not always on show. */
+let peekTurn = 0;
 
 /* ------------------------------------------------------------- mood ----- */
 
-/** The mood the companion falls back to when nothing else is happening. */
+/**
+ * The mood the companion falls back to when nothing else is happening.
+ *
+ * At home the companion is half below the screen edge, so it wears the raised
+ * "peek" faces there: an ordinary face would be drawn off screen and leave a
+ * blank dome sticking out of the desktop.
+ */
 function restingMood(): CompanionMood {
-  if (Date.now() - lastInteractionAt > SLEEP_AFTER_MS) return 'sleeping';
-  if (panelOpen) return 'listening';
-  return 'idle';
+  const asleep = Date.now() - lastInteractionAt > SLEEP_AFTER_MS;
+  if (panelOpen) return asleep ? 'sleeping' : 'listening';
+  if (atHome) return asleep ? 'dozing' : 'peeking';
+  return asleep ? 'sleeping' : 'idle';
+}
+
+/** The lively version of a mood, picked to suit where the companion is sitting. */
+function livelyMood(): CompanionMood {
+  return atHome && !panelOpen ? 'greeting' : 'happy';
 }
 
 function settleMood(): void {
@@ -76,7 +107,11 @@ function settleMood(): void {
 
 function applyMood(mood: CompanionMood): void {
   character.setMood(mood);
-  dom.zzz.hidden = mood !== 'sleeping';
+  // Mirrored onto the element so the current pose is visible from the DOM: the
+  // sprite is a canvas, and this is the only way to see it from the outside
+  // when driving the app over the debugging protocol.
+  dom.character.dataset.mood = mood;
+  dom.zzz.hidden = mood !== 'sleeping' && mood !== 'dozing';
 }
 
 /** Show a mood for a beat, then let it settle back. */
@@ -102,18 +137,20 @@ async function setInteractive(next: boolean): Promise<void> {
   await bridge.setInteractive(next);
 }
 
-function hitTest(x: number, y: number): boolean {
-  const target = document.elementFromPoint(x, y);
-  return Boolean(target?.closest('[data-interactive]'));
-}
-
 document.addEventListener('mousemove', (event) => {
   if (drag) return;
-  void setInteractive(hitTest(event.clientX, event.clientY));
+  const target = document.elementFromPoint(event.clientX, event.clientY);
+  void setInteractive(Boolean(target?.closest('[data-interactive]')));
+  // Hover comes off the same hit test as click-through: the window is inert
+  // most of the time, so element-level mouseenter is not dependable, but these
+  // forwarded moves always arrive.
+  setHovering(Boolean(target?.closest('#character')));
 });
 
 document.addEventListener('mouseleave', () => {
-  if (!drag) void setInteractive(false);
+  if (drag) return;
+  void setInteractive(false);
+  setHovering(false);
 });
 
 /* ------------------------------------------------------------- dragging - */
@@ -125,6 +162,8 @@ document.addEventListener('mouseleave', () => {
  * re-states that size on every move.
  */
 let drag: DragGesture | null = null;
+/** Whether the current gesture has already struck its carried-around pose. */
+let dragPosed = false;
 
 function releaseDrag(pointerId: number): void {
   if (dom.character.hasPointerCapture(pointerId)) {
@@ -135,6 +174,7 @@ function releaseDrag(pointerId: number): void {
 dom.character.addEventListener('pointerdown', (event) => {
   if (event.button !== 0) return;
   drag = beginDrag(event.screenX, event.screenY);
+  dragPosed = false;
   dom.character.setPointerCapture(event.pointerId);
   void bridge.startDrag();
 });
@@ -143,7 +183,17 @@ dom.character.addEventListener('pointermove', (event) => {
   if (!drag) return;
   // Total travel since the press, never an increment: see `trackDrag`.
   const offset = trackDrag(drag, event.screenX, event.screenY);
-  if (offset) void bridge.dragWindowTo(offset.x, offset.y);
+  if (!offset) return;
+  void bridge.dragWindowTo(offset.x, offset.y);
+  // Being carried is the most alive the companion ever looks. The pose is set
+  // once, when the gesture first crosses the drag threshold, and held until the
+  // pointer comes up.
+  if (!dragPosed) {
+    dragPosed = true;
+    markInteraction();
+    hidePeek();
+    holdMood(livelyMood(), 60_000);
+  }
 });
 
 dom.character.addEventListener('pointerup', (event) => {
@@ -153,7 +203,15 @@ dom.character.addEventListener('pointerup', (event) => {
   releaseDrag(event.pointerId);
   void bridge.endDrag();
   // A drag has already done its job; only a genuine click opens the panel.
-  if (isClick(gesture)) togglePanel();
+  if (isClick(gesture)) {
+    togglePanel();
+    return;
+  }
+  // Set down: drop the carried pose and let the placement the main process
+  // reports decide whether the companion is peeking again.
+  dragPosed = false;
+  moodHoldUntil = 0;
+  settleMood();
 });
 
 // A cancelled gesture (the window manager grabbing the pointer mid-drag, say)
@@ -161,8 +219,11 @@ dom.character.addEventListener('pointerup', (event) => {
 dom.character.addEventListener('pointercancel', (event) => {
   if (!drag) return;
   drag = null;
+  dragPosed = false;
   releaseDrag(event.pointerId);
   void bridge.endDrag();
+  moodHoldUntil = 0;
+  settleMood();
 });
 
 /** Send the companion back to its bottom-right home. */
@@ -177,6 +238,72 @@ dom.character.addEventListener('contextmenu', (event) => {
   event.preventDefault();
   returnHome();
 });
+
+/* ------------------------------------------------------------ at home --- */
+
+let peekTimer: number | null = null;
+
+/**
+ * Show the little home line above the companion's head.
+ *
+ * It is two or three words, it never asks anything, and it goes away on its
+ * own: at home the companion is meant to be furniture with a pulse, not a
+ * notification. It is also pointer-transparent, so it can never swallow a click
+ * meant for the desktop underneath.
+ */
+function showPeek(ms: number): void {
+  // A check-in bubble is the louder message and sits in the same column; the
+  // home line never competes with it.
+  if (!atHome || panelOpen || !dom.bubble.hidden) return;
+  dom.peek.textContent = homeLine(peekTurn);
+  dom.peek.hidden = false;
+  if (peekTimer !== null) window.clearTimeout(peekTimer);
+  peekTimer = window.setTimeout(() => {
+    dom.peek.hidden = true;
+  }, ms);
+}
+
+function hidePeek(): void {
+  if (peekTimer !== null) window.clearTimeout(peekTimer);
+  dom.peek.hidden = true;
+}
+
+/** A greeting pose plus one short line: the reply to being noticed. */
+function greet(): void {
+  peekTurn += 1;
+  markInteraction();
+  holdMood(livelyMood(), GREET_MS);
+  showPeek(GREET_MS);
+}
+
+function setHovering(next: boolean): void {
+  if (next === hovering) return;
+  hovering = next;
+  if (drag || panelOpen) return;
+  if (next) {
+    greet();
+  } else if (!dom.peek.hidden) {
+    // Let the line linger for a beat rather than snapping away with the pointer.
+    showPeek(PEEK_LINGER_MS);
+  }
+}
+
+/**
+ * The main process is the only thing that knows where the window ended up, so
+ * arriving home (or being dragged out of it) is what drives the home pose.
+ */
+function onPlacement(event: PlacementEvent): void {
+  if (event.home === atHome) return;
+  atHome = event.home;
+  if (atHome) {
+    // Tucked back in: pop up once so "return to corner" has a visible reply.
+    greet();
+  } else {
+    hidePeek();
+    moodHoldUntil = 0;
+  }
+  settleMood();
+}
 
 /* ----------------------------------------------------------------- chat - */
 
@@ -300,11 +427,16 @@ function setPanelOpen(open: boolean): void {
   markInteraction();
   if (open) {
     dom.bubble.hidden = true;
+    hidePeek();
     if (!greeted) {
       greeted = true;
       appendMessage(openingLine(context()), 'them');
     }
     window.setTimeout(() => dom.input.focus(), 0);
+  } else {
+    // Closing tucks the companion back into the corner; the home line is how
+    // that reads as "still here" rather than "gone".
+    showPeek(GREET_MS);
   }
   moodHoldUntil = 0;
   settleMood();
@@ -340,6 +472,7 @@ document.addEventListener('keydown', (event) => {
 let bubbleTimer: number | null = null;
 
 function showBubble(text: string, ms = 22_000): void {
+  hidePeek();
   dom.bubble.textContent = text;
   dom.bubble.hidden = false;
   if (bubbleTimer !== null) window.clearTimeout(bubbleTimer);
@@ -550,6 +683,10 @@ async function boot(): Promise<void> {
   dom.dataDir.textContent = await bridge.dataDirectory();
 
   bridge.onCheckIn(onCheckIn);
+  // Listen before asking, so a move that happens mid-boot cannot slip through
+  // the gap between the two.
+  bridge.onPlacement(onPlacement);
+  onPlacement(await bridge.getPlacement());
 
   await speechOut.init();
   populateVoices();

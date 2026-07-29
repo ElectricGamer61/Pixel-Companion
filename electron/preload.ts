@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-import type { AppSettings, CheckInEvent, VoiceSettings } from '../src/shared/types';
+import type { AppSettings, CheckInEvent, PlacementEvent, VoiceSettings } from '../src/shared/types';
 
 /**
  * The only surface the renderer gets. Context isolation is on and Node
@@ -49,6 +49,13 @@ const api = {
 
   onCheckIn: (handler: (event: CheckInEvent) => void): void => {
     ipcRenderer.on('companion:check-in', (_event, payload: CheckInEvent) => handler(payload));
+  },
+
+  getPlacement: (): Promise<PlacementEvent> => ipcRenderer.invoke('window:placement'),
+
+  /** Whether the window is tucked in its corner; only the main process knows. */
+  onPlacement: (handler: (event: PlacementEvent) => void): void => {
+    ipcRenderer.on('companion:placement', (_event, payload: PlacementEvent) => handler(payload));
   },
 };
 

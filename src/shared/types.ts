@@ -5,14 +5,24 @@
  * main process, ESM for the renderer bundle).
  */
 
-/** Visual states the pixel character can be in. */
+/**
+ * Visual states the pixel character can be in.
+ *
+ * `peeking`, `greeting`, and `dozing` are the home states: the companion is
+ * tucked into the bottom edge of the screen with only its head showing, so they
+ * are drawn with the high "peek" face that stays above the edge. See
+ * `HOME_VISIBLE_ROWS` in `sprite.ts`.
+ */
 export type CompanionMood =
   | 'idle'
   | 'listening'
   | 'thinking'
   | 'happy'
   | 'sleeping'
-  | 'talking';
+  | 'talking'
+  | 'peeking'
+  | 'greeting'
+  | 'dozing';
 
 export type CheckInKind = 'morning' | 'evening' | 'interval';
 
@@ -88,6 +98,12 @@ export interface CheckInState {
 export interface CheckInEvent {
   kind: CheckInKind;
   message: string;
+}
+
+/** Sent by the main process whenever where the window rests may have changed. */
+export interface PlacementEvent {
+  /** True while the companion is tucked in its home corner. */
+  home: boolean;
 }
 
 export interface CompanionReply {

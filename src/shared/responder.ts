@@ -360,6 +360,27 @@ export function respond(input: string, ctx: ResponderContext): CompanionReply {
   };
 }
 
+/**
+ * The tiny lines the companion shows while tucked at home.
+ *
+ * Deliberately two or three words: at home the companion is furniture, not a
+ * conversation, so anything longer would nag. Nothing here asks a question or
+ * demands a reply.
+ */
+const HOME_LINES: string[] = [
+  'psst.',
+  'still here.',
+  'just peeking.',
+  'take your time.',
+  'no rush.',
+  'click me anytime.',
+];
+
+/** A short, unobtrusive line for the tucked-at-home state. */
+export function homeLine(turn: number): string {
+  return rotate(HOME_LINES, turn);
+}
+
 /** Opening line shown when the companion first wakes up. */
 export function openingLine(ctx: ResponderContext): string {
   const hour = ctx.hour ?? 12;

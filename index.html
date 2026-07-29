@@ -222,11 +222,18 @@
       <!-- Idle speech bubble shown for check-ins and greetings. -->
       <div id="bubble" class="bubble" data-interactive hidden></div>
 
+      <!--
+        The home line: two or three words while the companion is tucked in its
+        corner. Deliberately not [data-interactive] — it must never catch a
+        click meant for the desktop behind it.
+      -->
+      <div id="peek" class="peek" hidden aria-hidden="true"></div>
+
       <div
         id="character"
         class="character"
         data-interactive
-        title="Click to talk, drag to move, right-click to send home"
+        title="Click to talk, drag to move, right-click to tuck back into the corner"
       >
         <canvas id="sprite" class="character__canvas"></canvas>
         <div id="zzz" class="zzz" hidden aria-hidden="true">

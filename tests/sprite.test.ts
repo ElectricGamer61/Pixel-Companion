@@ -8,10 +8,13 @@ import {
   FACE_WIDTH,
   FACE_X,
   FACE_Y,
+  HOME_VISIBLE_ROWS,
   PALETTE,
+  PEEK_FACES,
   SPRITE_SIZE,
   animationLength,
   composeFrame,
+  faceOriginY,
   stepAt,
 } from '../src/shared/sprite';
 import type { CompanionMood } from '../src/shared/types';
@@ -23,7 +26,13 @@ const MOODS: CompanionMood[] = [
   'happy',
   'sleeping',
   'talking',
+  'peeking',
+  'greeting',
+  'dozing',
 ];
+
+/** The moods worn while tucked at home; all of them must stay on screen there. */
+const HOME_MOODS: CompanionMood[] = ['peeking', 'greeting', 'dozing'];
 
 describe('sprite grids', () => {
   it('has a square body of the declared size', () => {
@@ -61,8 +70,24 @@ describe('sprite grids', () => {
       for (let y = 0; y < FACE_HEIGHT; y += 1) {
         for (let x = 0; x < FACE_WIDTH; x += 1) {
           if (face[y][x] === '.') continue;
-          const under = BODY[FACE_Y + y][FACE_X + x];
+          const under = BODY[faceOriginY(name) + y][FACE_X + x];
           expect(under, `${name} at ${x},${y} must not sit on empty space`).not.toBe('.');
+        }
+      }
+    }
+  });
+
+  it('keeps every peek face above the screen edge the companion tucks into', () => {
+    // The whole point of the peek faces: at home the lower half of the blob is
+    // below the screen edge, so an expression drawn down there is invisible.
+    expect(HOME_VISIBLE_ROWS).toBeGreaterThan(0);
+    for (const name of PEEK_FACES) {
+      const face = FACES[name];
+      expect(face, name).toBeDefined();
+      for (let y = 0; y < FACE_HEIGHT; y += 1) {
+        for (let x = 0; x < FACE_WIDTH; x += 1) {
+          if (face[y][x] === '.') continue;
+          expect(faceOriginY(name) + y, `${name} at ${x},${y}`).toBeLessThan(HOME_VISIBLE_ROWS);
         }
       }
     }
@@ -150,6 +175,33 @@ describe('animations', () => {
         expect(FACES[step.face]).toBeDefined();
       }
       expect(stepAt(mood, 0)).toEqual(stepAt(mood, length));
+    }
+  });
+
+  it('wears a peek face for every home mood', () => {
+    // A home mood drawn with an ordinary face would leave a blank dome poking
+    // out of the desktop, which is exactly the bug these moods exist to fix.
+    for (const mood of HOME_MOODS) {
+      for (const step of ANIMATIONS[mood]) {
+        expect(PEEK_FACES.has(String(step.face)), `${mood} -> ${String(step.face)}`).toBe(true);
+      }
+    }
+  });
+
+  it('keeps every home pose on screen once the bob is applied', () => {
+    // The bob shifts the whole sprite; only upward moves are safe at home,
+    // since a downward one sinks the face below the edge.
+    for (const mood of HOME_MOODS) {
+      for (const step of ANIMATIONS[mood]) {
+        let lowest = 0;
+        FACES[step.face].forEach((row, y) => {
+          if (/[^.]/.test(row)) lowest = y;
+        });
+        expect(
+          faceOriginY(step.face) + lowest + Math.max(step.bob, 0),
+          `${mood} -> ${String(step.face)}`,
+        ).toBeLessThan(HOME_VISIBLE_ROWS);
+      }
     }
   });
 

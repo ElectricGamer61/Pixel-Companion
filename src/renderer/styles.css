@@ -477,6 +477,26 @@ body {
   border-bottom: 0;
 }
 
+/* ------------------------------------------------------------ home line -- */
+
+/*
+ * The line the companion shows while tucked in its corner. Smaller and quieter
+ * than a bubble on purpose: it is a sign of life, not a message to answer. It
+ * is pointer-transparent so a click near the corner still reaches the desktop.
+ */
+.peek {
+  margin-right: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--ink);
+  background: var(--highlight);
+  border: 2px solid var(--ink);
+  border-radius: 999px;
+  pointer-events: none;
+  animation: rise 200ms ease-out;
+}
+
 /* ------------------------------------------------------------ character -- */
 
 .character {

@@ -56,6 +56,19 @@ These are promises made to users in `README.md`, not preferences:
   `window:drag-start` and applies *total* offsets from the press point, which is
   idempotent. Every move restates the fixed window size, so a drag can never resize the
   overlay.
+- **`window.getPosition()` is never the answer to "where is the window?".** It is stale
+  right after every move, and at start-up under WSLg it reports `(32, 32)` until the
+  compositor catches up — which silently made the companion think it was not at home.
+  `placedPosition` in `electron/main.ts` latches what was last *asked* for (always
+  clamped, since every move goes through `moveWindowTo`), and `currentPosition` returns
+  that. Home-ness, drag origins, and the persisted position all read from it.
+- **At home only the top half of the sprite exists.** `HOME_VISIBLE_ROWS` in
+  `src/shared/sprite.ts` is derived from `HOME_TUCK`; anything drawn below it is under
+  the screen edge. That is why the home moods (`peeking`, `greeting`, `dozing`) use the
+  `PEEK_FACES`, stamped at `PEEK_FACE_Y` instead of `FACE_Y`, and never bob downwards.
+  Tests in `tests/sprite.test.ts` enforce both. The renderer only learns it is at home
+  from the main process (`window:placement` at boot, `companion:placement` after), and it
+  mirrors the current pose onto `#character[data-mood]` so a CDP session can read it.
 - **Home is a deliberate half-off-screen tuck, and the panel has to undo it.** The
   companion rests sunk `HOME_TUCK` into the bottom edge, so `clampToWorkArea` permits an
   `OVERHANG` past the bottom — but only there, because a window stranded off the sides or

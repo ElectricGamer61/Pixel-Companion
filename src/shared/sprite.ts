@@ -1,4 +1,5 @@
 import type { CompanionMood } from './types';
+import { HOME_TUCK } from './window-position';
 
 /**
  * The companion's pixel art, authored by hand as character grids.
@@ -17,6 +18,35 @@ export const FACE_WIDTH = 12;
 export const FACE_HEIGHT = 5;
 export const FACE_X = 2;
 export const FACE_Y = 6;
+
+/**
+ * How many sprite rows are still above the screen edge while the companion is
+ * tucked at home. Derived from the tuck so the two can never drift apart.
+ */
+export const HOME_VISIBLE_ROWS = Math.floor(SPRITE_SIZE * (1 - HOME_TUCK));
+
+/**
+ * Where the "peek" faces are stamped instead of FACE_Y.
+ *
+ * At home the blob's lower half is below the screen edge, so a face drawn at
+ * the usual height is simply not there: the user sees a blank dome. The peek
+ * expressions ride high on the head, entirely inside HOME_VISIBLE_ROWS, which
+ * is what gives the tucked companion a face at all.
+ */
+export const PEEK_FACE_Y = 4;
+
+/** Faces stamped at PEEK_FACE_Y rather than FACE_Y. */
+export const PEEK_FACES: ReadonlySet<string> = new Set([
+  'peek',
+  'peekBlink',
+  'peekHappy',
+  'peekSleep',
+]);
+
+/** Row the named face is stamped at. */
+export function faceOriginY(face: string): number {
+  return PEEK_FACES.has(face) ? PEEK_FACE_Y : FACE_Y;
+}
 
 /** `.` is transparent; every other key maps to a colour. */
 export const PALETTE: Record<string, string> = {
@@ -113,6 +143,38 @@ export const FACES: Record<string, readonly string[]> = {
     '............',
     '....mmmm....',
   ],
+  // The home poses. Everything below lives in the top rows of the sprite, so it
+  // is still on screen while the companion is tucked into the bottom edge: tall
+  // wide-awake eyes peering up over the ledge, and a small quiet mouth.
+  peek: [
+    '..ee....ee..',
+    '..ee....ee..',
+    '..ee....ee..',
+    '.....mm.....',
+    '............',
+  ],
+  peekBlink: [
+    '............',
+    '..eee..eee..',
+    '............',
+    '.....mm.....',
+    '............',
+  ],
+  // The greeting pose: eyes crinkled shut, blush, and a wide grin.
+  peekHappy: [
+    '...e....e...',
+    '..e.e..e.e..',
+    'cc.m....m.cc',
+    '....mmmm....',
+    '............',
+  ],
+  peekSleep: [
+    '............',
+    '..eee..eee..',
+    '............',
+    '....mmm.....',
+    '............',
+  ],
 };
 
 /**
@@ -166,6 +228,28 @@ export const ANIMATIONS: Record<CompanionMood, readonly AnimationStep[]> = {
     { face: 'talkOpen', ticks: 2, bob: -1 },
     { face: 'talkClosed', ticks: 3, bob: 0 },
   ],
+  // At home the bob is the whole performance: the companion rises up out of the
+  // screen edge to look around and settles back down, which is what sells
+  // "peeking" when only the top of the head is visible. It never bobs downwards
+  // there — that direction is below the edge, where nothing can be seen.
+  peeking: [
+    { face: 'peek', ticks: 10, bob: 0 },
+    { face: 'peek', ticks: 8, bob: -1 },
+    { face: 'peekBlink', ticks: 1, bob: -1 },
+    { face: 'peek', ticks: 6, bob: -2 },
+    { face: 'peek', ticks: 9, bob: -1 },
+    { face: 'peek', ticks: 7, bob: 0 },
+  ],
+  greeting: [
+    { face: 'peekHappy', ticks: 3, bob: -3 },
+    { face: 'peekHappy', ticks: 3, bob: -1 },
+    { face: 'peekHappy', ticks: 3, bob: -3 },
+    { face: 'peekHappy', ticks: 5, bob: -2 },
+  ],
+  dozing: [
+    { face: 'peekSleep', ticks: 10, bob: 0 },
+    { face: 'peekSleep', ticks: 10, bob: -1 },
+  ],
 };
 
 /**
@@ -175,12 +259,13 @@ export const ANIMATIONS: Record<CompanionMood, readonly AnimationStep[]> = {
 export function composeFrame(face: keyof typeof FACES): string[][] {
   const grid = BODY.map((row) => row.split(''));
   const overlay = FACES[face];
+  const originY = faceOriginY(face);
   for (let y = 0; y < FACE_HEIGHT; y += 1) {
     const row = overlay[y];
     for (let x = 0; x < FACE_WIDTH; x += 1) {
       const cell = row[x];
       if (cell === '.') continue;
-      grid[FACE_Y + y][FACE_X + x] = cell;
+      grid[originY + y][FACE_X + x] = cell;
     }
   }
   return grid;

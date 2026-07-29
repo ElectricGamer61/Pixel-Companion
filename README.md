@@ -151,6 +151,7 @@ into the bottom edge so only its head peeks up.
 
 | Action | What happens |
 | --- | --- |
+| Hover the character | It looks up, grins, and shows a two-word hello |
 | Click the character | Opens the chat and settings panel |
 | Drag the character | Moves it anywhere; the position is remembered |
 | Right-click the character | Sends it back to the bottom-right corner |
@@ -170,6 +171,14 @@ character or the panel.
 The companion's **home** is the bottom-right of your primary screen, tucked
 half-way down into the bottom edge so only the top of its head shows. That is
 where it starts on first run, and it stays out of the way until you want it.
+
+At home it has its own pose: the face rides high on its head so it is actually
+visible above the screen edge, with tall eyes that blink and a slow bob as it
+rises to look around and settles back. Hovering it, or sending it home, gets a
+grin and one short line — "psst.", "still here." — which fades on its own and
+never asks you anything. Pick it up and it perks up for the whole drag; set it
+down away from the corner and it goes back to its ordinary face. Left alone long
+enough it dozes off, at home or wherever you put it.
 
 Opening the chat slides the whole window into view for as long as the panel is
 open, then tucks it straight back when you close it, so the panel is never

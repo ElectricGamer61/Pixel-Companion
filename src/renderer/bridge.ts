@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS } from '../shared/defaults';
-import type { AppSettings, CheckInEvent, VoiceSettings } from '../shared/types';
+import type { AppSettings, CheckInEvent, PlacementEvent, VoiceSettings } from '../shared/types';
 
 /**
  * Access to the preload API, with an in-memory stand-in so the renderer also
@@ -25,6 +25,10 @@ export interface Bridge {
   openExternal(url: string): Promise<void>;
   quit(): Promise<void>;
   onCheckIn(handler: (event: CheckInEvent) => void): void;
+  /** Whether the companion is tucked at home right now. */
+  getPlacement(): Promise<PlacementEvent>;
+  /** Told whenever that changes. */
+  onPlacement(handler: (event: PlacementEvent) => void): void;
 }
 
 /** True when running inside Electron rather than a bare browser tab. */
@@ -32,6 +36,15 @@ export const isDesktop = typeof (window as { companion?: unknown }).companion !=
 
 function browserFallback(): Bridge {
   let settings: AppSettings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) as AppSettings;
+  // There is no window to move in a browser tab, but the home state is pure UI,
+  // so the preview still models it: it starts at home and a "drag" leaves.
+  let placement: ((event: PlacementEvent) => void) | null = null;
+  let home = true;
+  const setHome = (next: boolean): void => {
+    if (next === home) return;
+    home = next;
+    placement?.({ home });
+  };
   return {
     platform: 'browser',
     getSettings: async () => settings,
@@ -46,9 +59,9 @@ function browserFallback(): Bridge {
       return settings;
     },
     startDrag: async () => undefined,
-    dragWindowTo: async () => undefined,
+    dragWindowTo: async () => setHome(false),
     endDrag: async () => undefined,
-    goHome: async () => undefined,
+    goHome: async () => setHome(true),
     setPanelOpen: async () => undefined,
     setInteractive: async () => undefined,
     nativeSpeechAvailable: async () => false,
@@ -61,6 +74,10 @@ function browserFallback(): Bridge {
     },
     quit: async () => undefined,
     onCheckIn: () => undefined,
+    getPlacement: async () => ({ home }),
+    onPlacement: (handler) => {
+      placement = handler;
+    },
   };
 }
 
