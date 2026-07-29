@@ -2,6 +2,7 @@ import './styles.css';
 
 import { openingLine, respond, systemPrompt } from '../shared/responder';
 import type { AppSettings, CheckInEvent, CompanionMood, CompanionReply } from '../shared/types';
+import { beginDrag, isClick, trackDrag, type DragGesture } from '../shared/window-position';
 import { bridge, isDesktop } from './bridge';
 import { Character } from './character';
 import { SpeechInput, SpeechOutput } from './speech';
@@ -10,8 +11,6 @@ import { SpeechInput, SpeechOutput } from './speech';
 const SLEEP_AFTER_MS = 5 * 60_000;
 /** How long a reply-specific mood (happy, thinking) sticks before settling. */
 const MOOD_HOLD_MS = 2600;
-/** Pointer travel that turns a click into a drag. */
-const DRAG_THRESHOLD_PX = 4;
 /** Conversation turns kept in memory for the optional local model. */
 const HISTORY_LIMIT = 12;
 
@@ -26,6 +25,8 @@ const dom = {
   panel: element('panel'),
   panelTitle: element('panel-title'),
   panelClose: element<HTMLButtonElement>('panel-close'),
+  panelHome: element<HTMLButtonElement>('panel-home'),
+  homeCorner: element<HTMLButtonElement>('home-corner'),
   tabChat: element<HTMLButtonElement>('tab-chat'),
   tabSettings: element<HTMLButtonElement>('tab-settings'),
   chatView: element('chat-view'),
@@ -106,54 +107,74 @@ function hitTest(x: number, y: number): boolean {
 }
 
 document.addEventListener('mousemove', (event) => {
-  if (dragging) return;
+  if (drag) return;
   void setInteractive(hitTest(event.clientX, event.clientY));
 });
 
 document.addEventListener('mouseleave', () => {
-  if (!dragging) void setInteractive(false);
+  if (!drag) void setInteractive(false);
 });
 
 /* ------------------------------------------------------------- dragging - */
 
-let dragging = false;
-let dragMoved = 0;
-let dragOriginX = 0;
-let dragOriginY = 0;
+/**
+ * The gesture in flight, or `null` when the pointer is not down on the
+ * character. Drag moves the window and nothing else: no scale, no size, no
+ * panel state. The window is a fixed-size overlay and the main process
+ * re-states that size on every move.
+ */
+let drag: DragGesture | null = null;
+
+function releaseDrag(pointerId: number): void {
+  if (dom.character.hasPointerCapture(pointerId)) {
+    dom.character.releasePointerCapture(pointerId);
+  }
+}
 
 dom.character.addEventListener('pointerdown', (event) => {
   if (event.button !== 0) return;
-  dragging = true;
-  dragMoved = 0;
-  dragOriginX = event.screenX;
-  dragOriginY = event.screenY;
+  drag = beginDrag(event.screenX, event.screenY);
   dom.character.setPointerCapture(event.pointerId);
+  void bridge.startDrag();
 });
 
 dom.character.addEventListener('pointermove', (event) => {
-  if (!dragging) return;
-  const dx = event.screenX - dragOriginX;
-  const dy = event.screenY - dragOriginY;
-  if (dx === 0 && dy === 0) return;
-  dragMoved += Math.abs(dx) + Math.abs(dy);
-  dragOriginX = event.screenX;
-  dragOriginY = event.screenY;
-  void bridge.dragWindow(dx, dy);
+  if (!drag) return;
+  // Total travel since the press, never an increment: see `trackDrag`.
+  const offset = trackDrag(drag, event.screenX, event.screenY);
+  if (offset) void bridge.dragWindowTo(offset.x, offset.y);
 });
 
 dom.character.addEventListener('pointerup', (event) => {
-  if (!dragging) return;
-  dragging = false;
-  dom.character.releasePointerCapture(event.pointerId);
-  if (dragMoved > DRAG_THRESHOLD_PX) {
-    void bridge.endDrag();
-    return;
-  }
-  togglePanel();
+  if (!drag) return;
+  const gesture = drag;
+  drag = null;
+  releaseDrag(event.pointerId);
+  void bridge.endDrag();
+  // A drag has already done its job; only a genuine click opens the panel.
+  if (isClick(gesture)) togglePanel();
 });
 
-dom.character.addEventListener('pointercancel', () => {
-  dragging = false;
+// A cancelled gesture (the window manager grabbing the pointer mid-drag, say)
+// must still settle the window, and must never fall through to a panel toggle.
+dom.character.addEventListener('pointercancel', (event) => {
+  if (!drag) return;
+  drag = null;
+  releaseDrag(event.pointerId);
+  void bridge.endDrag();
+});
+
+/** Send the companion back to its bottom-right home. */
+function returnHome(): void {
+  markInteraction();
+  void bridge.goHome();
+}
+
+// Right-clicking the character is the escape hatch when it has been dragged
+// somewhere awkward and the panel is closed.
+dom.character.addEventListener('contextmenu', (event) => {
+  event.preventDefault();
+  returnHome();
 });
 
 /* ----------------------------------------------------------------- chat - */
@@ -289,6 +310,8 @@ function togglePanel(): void {
 }
 
 dom.panelClose.addEventListener('click', () => setPanelOpen(false));
+dom.panelHome.addEventListener('click', () => returnHome());
+dom.homeCorner.addEventListener('click', () => returnHome());
 
 function showTab(tab: 'chat' | 'settings'): void {
   const chat = tab === 'chat';

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { evaluateCheckIns } from '../src/shared/checkins';
 import { askLocalModel, type ChatMessage } from '../src/shared/llm';
 import type { AppSettings, VoiceSettings } from '../src/shared/types';
+import { clampToWorkArea, homePosition, type Point } from '../src/shared/window-position';
 import {
   dataDirectory,
   loadCheckInState,
@@ -13,40 +14,53 @@ import {
 } from './store';
 import { nativeSpeechAvailable, speakNative, stopNative } from './speech';
 
-/** Logical size of the companion window: character plus its chat panel. */
-const WINDOW_WIDTH = 380;
-const WINDOW_HEIGHT = 520;
-/** Gap from the screen edges when placed bottom-right. */
-const EDGE_MARGIN = 24;
+/**
+ * Logical size of the companion window: character plus its chat panel.
+ *
+ * This is a hard invariant. The window is a fixed-size overlay, so every place
+ * that positions it re-states the size instead of trusting whatever the window
+ * manager currently believes — that is what keeps a drag from ever resizing it.
+ */
+const WINDOW_SIZE = { width: 380, height: 520 } as const;
 /** How often the check-in scheduler wakes up. */
 const SCHEDULER_INTERVAL_MS = 30_000;
 
 let window: BrowserWindow | null = null;
 let settings: AppSettings = { ...loadSettings() };
 let schedulerTimer: NodeJS.Timeout | null = null;
+/**
+ * Window origin latched when a drag starts. Drag moves are absolute offsets
+ * from this point, never increments applied to a live (and often stale) read of
+ * the current position.
+ */
+let dragOrigin: Point | null = null;
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 
-/** Place the window bottom-right of the primary display's work area. */
-function defaultPosition(): { x: number; y: number } {
-  const { workArea } = screen.getPrimaryDisplay();
-  return {
-    x: workArea.x + workArea.width - WINDOW_WIDTH - EDGE_MARGIN,
-    y: workArea.y + workArea.height - WINDOW_HEIGHT - EDGE_MARGIN,
-  };
+/** The companion's home: bottom-right of the primary display's work area. */
+function defaultPosition(): Point {
+  return homePosition(screen.getPrimaryDisplay().workArea, WINDOW_SIZE);
 }
 
 /**
- * Keep the window on a display that actually exists. Monitors get unplugged and
- * a saved position can easily point off-screen.
+ * Keep the whole window on a display that actually exists. Monitors get
+ * unplugged and a saved position can easily point off-screen.
  */
-function clampToDisplay(position: { x: number; y: number }): { x: number; y: number } {
-  const display = screen.getDisplayNearestPoint(position);
-  const { workArea } = display;
-  return {
-    x: Math.round(Math.min(Math.max(position.x, workArea.x), workArea.x + workArea.width - 80)),
-    y: Math.round(Math.min(Math.max(position.y, workArea.y), workArea.y + workArea.height - 80)),
-  };
+function clampToDisplay(position: Point): Point {
+  const { workArea } = screen.getDisplayNearestPoint(position);
+  return clampToWorkArea(position, workArea, WINDOW_SIZE);
+}
+
+/**
+ * Move the window without ever touching its size.
+ *
+ * `setBounds` re-states the fixed width and height on every move, so no window
+ * manager quirk during a drag can leave the overlay resized.
+ */
+function moveWindowTo(position: Point): void {
+  if (!window || window.isDestroyed()) return;
+  const next = clampToDisplay(position);
+  window.setBounds({ ...next, ...WINDOW_SIZE });
 }
 
 /**
@@ -73,8 +87,13 @@ function createWindow(): void {
   const position = clampToDisplay(settings.windowPosition ?? defaultPosition());
 
   window = new BrowserWindow({
-    width: WINDOW_WIDTH,
-    height: WINDOW_HEIGHT,
+    ...WINDOW_SIZE,
+    // Belt and braces with `resizable: false`: a window manager that ignores
+    // the resizable hint still has to honour the size constraints.
+    minWidth: WINDOW_SIZE.width,
+    maxWidth: WINDOW_SIZE.width,
+    minHeight: WINDOW_SIZE.height,
+    maxHeight: WINDOW_SIZE.height,
     x: position.x,
     y: position.y,
     frame: false,
@@ -127,16 +146,33 @@ function createWindow(): void {
   // Losing focus is where a window manager is most likely to restack the
   // companion behind whatever the user just clicked.
   window.on('blur', () => applyAlwaysOnTop());
+  // Last line of defence for the size invariant: if anything ever does resize
+  // the overlay, snap it straight back rather than leaving a grown blob on the
+  // desktop. This only touches size, so it cannot disturb click-through.
+  window.on('resize', () => {
+    if (!window || window.isDestroyed()) return;
+    const [width, height] = window.getSize();
+    if (width !== WINDOW_SIZE.width || height !== WINDOW_SIZE.height) {
+      window.setSize(WINDOW_SIZE.width, WINDOW_SIZE.height);
+    }
+  });
   window.on('closed', () => {
     window = null;
   });
 }
 
-/** Persist the window's current position so it reopens where the user left it. */
+/**
+ * Persist the window's current position so it reopens where the user left it.
+ *
+ * Sitting at home is stored as "no custom position" rather than as today's
+ * home coordinates, so a companion that was never moved out of the corner still
+ * lands in the corner after the screen resolution changes.
+ */
 function rememberPosition(): void {
   if (!window || window.isDestroyed()) return;
   const [x, y] = window.getPosition();
-  settings.windowPosition = { x, y };
+  const home = defaultPosition();
+  settings.windowPosition = x === home.x && y === home.y ? null : { x, y };
   saveSettings(settings);
 }
 
@@ -175,14 +211,33 @@ function registerIpc(): void {
     return settings;
   });
 
-  ipcMain.handle('window:drag', (_event, dx: number, dy: number) => {
+  ipcMain.handle('window:drag-start', () => {
     if (!window || window.isDestroyed()) return;
     const [x, y] = window.getPosition();
-    const next = clampToDisplay({ x: x + Math.round(dx), y: y + Math.round(dy) });
-    window.setPosition(next.x, next.y);
+    dragOrigin = { x, y };
   });
 
-  ipcMain.handle('window:drag-end', () => rememberPosition());
+  // `dx`/`dy` are the pointer's total travel since the press, not an increment.
+  // Applying them to the latched origin makes every move idempotent, so a stale
+  // position read can neither drop travel nor compound it.
+  ipcMain.handle('window:drag-to', (_event, dx: number, dy: number) => {
+    if (!dragOrigin) return;
+    moveWindowTo({ x: dragOrigin.x + Math.round(dx), y: dragOrigin.y + Math.round(dy) });
+  });
+
+  ipcMain.handle('window:drag-end', () => {
+    dragOrigin = null;
+    rememberPosition();
+  });
+
+  // "Return to corner": go home and forget the custom position, so the next
+  // launch starts at home too.
+  ipcMain.handle('window:home', () => {
+    dragOrigin = null;
+    moveWindowTo(defaultPosition());
+    settings.windowPosition = null;
+    saveSettings(settings);
+  });
 
   ipcMain.handle('window:interactive', (_event, interactive: boolean) => {
     if (!window || window.isDestroyed()) return;

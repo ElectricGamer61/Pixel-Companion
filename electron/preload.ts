@@ -15,10 +15,15 @@ const api = {
   saveSettings: (patch: Partial<AppSettings>): Promise<AppSettings> =>
     ipcRenderer.invoke('settings:save', patch),
 
-  dragWindow: (dx: number, dy: number): Promise<void> =>
-    ipcRenderer.invoke('window:drag', dx, dy),
+  startDrag: (): Promise<void> => ipcRenderer.invoke('window:drag-start'),
+
+  /** `dx`/`dy` are total pointer travel since the press, not increments. */
+  dragWindowTo: (dx: number, dy: number): Promise<void> =>
+    ipcRenderer.invoke('window:drag-to', dx, dy),
 
   endDrag: (): Promise<void> => ipcRenderer.invoke('window:drag-end'),
+
+  goHome: (): Promise<void> => ipcRenderer.invoke('window:home'),
 
   setInteractive: (interactive: boolean): Promise<void> =>
     ipcRenderer.invoke('window:interactive', interactive),

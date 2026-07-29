@@ -104,6 +104,9 @@ The companion appears in the bottom-right of your primary screen.
 | --- | --- |
 | Click the character | Opens the chat and settings panel |
 | Drag the character | Moves it anywhere; the position is remembered |
+| Right-click the character | Sends it back to the bottom-right corner |
+| Panel header 🏠 button | Same: return to the corner |
+| Settings → Appearance → Return to corner | Same, from the settings tab |
 | Type and press Enter | The companion replies |
 | `Esc` | Closes the panel |
 | Settings → Quit companion | Exits the app |
@@ -111,6 +114,45 @@ The companion appears in the bottom-right of your primary screen.
 The rest of your desktop stays clickable: the window is transparent, and
 click-through is switched off only while the pointer is actually over the
 character or the panel.
+
+### Where it lives, and getting it back
+
+The companion's **home** is the bottom-right of your primary screen, and that is
+where it starts on first run — small, tucked into the corner, with the chat panel
+closed.
+
+Drag the character to put it wherever you like; that position is remembered
+across restarts. Dragging only ever moves it: it never resizes the character, the
+chat panel, or the window, and it never opens the panel — only a real click does
+that. If it ends up somewhere awkward, any of the three "return to corner"
+actions above puts it straight back home and forgets the custom position, so the
+next launch starts in the corner too. It can never be dragged off the edge of the
+screen.
+
+## What the "AI" actually is
+
+Worth being blunt about, because the answer is unusual: **by default there is no
+AI model at all.**
+
+- **Default: a free, local, rule-based responder.** Replies come from
+  [`src/shared/responder.ts`](src/shared/responder.ts) — pattern matching over
+  what you typed, plus hand-written supportive phrasings. It runs in-process, on
+  your machine, with the network unplugged. Nothing is sent anywhere.
+- **It is not Claude, ChatGPT, Copilot, or any cloud service**, and it does not
+  shell out to the Claude Code or Codex CLI. There is no API key to buy and no
+  provider to sign up with.
+- **Optional: your own local model.** If you already run Ollama, llama.cpp, or
+  LM Studio, you can point the companion at that endpoint in
+  Settings → *Optional local model*. It is off by default, it stays on your
+  machine, and if it is disabled, unreachable, or returns anything unusable the
+  app silently falls back to the rule-based responder. See
+  [Optional: use a local model](#optional-use-a-local-model).
+- **The crisis check always runs first**, before any model, so a model can never
+  bypass it.
+
+The trade-off is honest: the offline responder is a good listener with a small
+vocabulary, not a conversationalist. Enabling a local model is what buys range,
+and that choice — and the hardware to run it — stays entirely yours.
 
 ## What it does
 
@@ -251,6 +293,7 @@ src/shared/        Pure, dependency-free, compiled for BOTH processes
   sprite.ts          The pixel art, as character grids
   llm.ts             Optional local-model client
   defaults.ts        Defaults and forward-compatible settings merging
+  window-position.ts Home placement, on-screen clamping, drag gesture logic
 src/renderer/      UI: canvas character, chat panel, settings, speech
 scripts/           Local launch helpers (no build-system role)
   run-linux.sh              Install-if-missing, build-if-stale, run

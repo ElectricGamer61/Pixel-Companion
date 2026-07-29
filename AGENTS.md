@@ -46,6 +46,16 @@ These are promises made to users in `README.md`, not preferences:
   are flex containers, and the UA `[hidden] { display: none }` rule loses to any explicit
   `display`. `styles.css` has a global `[hidden] { display: none !important }` for this;
   removing it silently stacks every panel view on top of each other.
+- **Window moves must be absolute, never incremental.** `window.getPosition()` is stale
+  while the window manager applies a move, so the old `getPosition() + delta` drag
+  protocol silently dropped most of the travel (measured: 100 moves of +2px produced
+  +22px). The window then lagged the pointer, the gesture degraded into a click, and
+  every drag attempt toggled the chat panel open — the "growing blob" the captain saw.
+  `src/shared/window-position.ts` is now the single source of truth for home placement,
+  clamping, and the drag gesture: the main process latches the origin on
+  `window:drag-start` and applies *total* offsets from the press point, which is
+  idempotent. Every move restates the fixed window size, so a drag can never resize the
+  overlay.
 - **Click-through is hit-tested per pointer move.** The window covers a rectangle of
   desktop and is `setIgnoreMouseEvents(true, { forward: true })` by default; the renderer
   flips it only while the pointer is over a `[data-interactive]` element. New interactive

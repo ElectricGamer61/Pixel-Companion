@@ -28,6 +28,21 @@
               Settings
             </button>
           </nav>
+          <button
+            type="button"
+            id="panel-home"
+            class="icon-button"
+            aria-label="Return to corner"
+            title="Return to the bottom-right corner"
+          >
+            <!-- Inline pixel-grid house: no icon font, no remote asset. -->
+            <svg viewBox="0 0 11 10" width="14" height="13" aria-hidden="true" focusable="false">
+              <path
+                fill="currentColor"
+                d="M5 0h1v1H5zM4 1h3v1H4zM3 2h5v1H3zM2 3h7v1H2zM1 4h9v1H1zM2 5h2v1H2zM7 5h2v1H7zM2 6h2v1H2zM7 6h2v1H7zM2 7h2v1H2zM5 7h4v1H5zM2 8h7v1H2z"
+              />
+            </svg>
+          </button>
           <button type="button" id="panel-close" class="icon-button" aria-label="Close panel">
             ×
           </button>
@@ -130,10 +145,26 @@
                 <input type="checkbox" id="set-always-on-top" />
                 <span>Always on top</span>
               </label>
+              <div class="field">
+                <span>Position</span>
+                <button type="button" id="home-corner" class="button button--quiet">
+                  Return to corner
+                </button>
+              </div>
+              <p class="hint">
+                Drag the character to move it anywhere; it stays where you leave it. Return to
+                corner puts it back in the bottom-right, and you can also right-click the
+                character to send it home.
+              </p>
             </fieldset>
 
             <fieldset class="group">
               <legend>Optional local model</legend>
+              <p class="hint">
+                By default your companion replies from a built-in rule-based responder that runs
+                entirely on this machine. It is not Claude, ChatGPT, the Claude/Codex CLI, or any
+                other cloud service, and it never sends anything anywhere.
+              </p>
               <label class="field field--toggle">
                 <input type="checkbox" id="set-model-enabled" />
                 <span>Use a local model server</span>
@@ -171,7 +202,12 @@
       <!-- Idle speech bubble shown for check-ins and greetings. -->
       <div id="bubble" class="bubble" data-interactive hidden></div>
 
-      <div id="character" class="character" data-interactive title="Click to talk, drag to move">
+      <div
+        id="character"
+        class="character"
+        data-interactive
+        title="Click to talk, drag to move, right-click to send home"
+      >
         <canvas id="sprite" class="character__canvas"></canvas>
         <div id="zzz" class="zzz" hidden aria-hidden="true">
           <span>z</span><span>z</span><span>z</span>

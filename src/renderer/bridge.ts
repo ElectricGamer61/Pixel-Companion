@@ -9,8 +9,11 @@ export interface Bridge {
   platform: string;
   getSettings(): Promise<AppSettings>;
   saveSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
-  dragWindow(dx: number, dy: number): Promise<void>;
+  startDrag(): Promise<void>;
+  /** `dx`/`dy` are total pointer travel since the press, not increments. */
+  dragWindowTo(dx: number, dy: number): Promise<void>;
   endDrag(): Promise<void>;
+  goHome(): Promise<void>;
   setInteractive(interactive: boolean): Promise<void>;
   nativeSpeechAvailable(): Promise<boolean>;
   speakNative(text: string, voice: VoiceSettings): Promise<boolean>;
@@ -40,8 +43,10 @@ function browserFallback(): Bridge {
       };
       return settings;
     },
-    dragWindow: async () => undefined,
+    startDrag: async () => undefined,
+    dragWindowTo: async () => undefined,
     endDrag: async () => undefined,
+    goHome: async () => undefined,
     setInteractive: async () => undefined,
     nativeSpeechAvailable: async () => false,
     speakNative: async () => false,
