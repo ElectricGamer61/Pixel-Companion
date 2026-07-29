@@ -6,6 +6,7 @@
   "description": "A free, local-only pixel-art desktop companion for emotional support and gentle accountability.",
   "author": "Pixel Companion contributors",
   "license": "MIT",
+  "homepage": "https://github.com/ElectricGamer61/pixel-companion",
   "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "concurrently -k -n vite,electron -c cyan,magenta \"npm:dev:renderer\" \"npm:dev:electron\"",

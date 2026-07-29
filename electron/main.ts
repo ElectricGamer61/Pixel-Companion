@@ -49,6 +49,26 @@ function clampToDisplay(position: { x: number; y: number }): { x: number; y: num
   };
 }
 
+/**
+ * Apply the always-on-top preference.
+ *
+ * On Linux this has to be re-asserted rather than set once: several window
+ * managers drop the hint when the window is first mapped, and
+ * `setVisibleOnAllWorkspaces` clears it outright, so the call order below
+ * matters. Re-applying only touches stacking — it never focuses the window and
+ * never changes the mouse-event mask, so click-through is unaffected.
+ */
+function applyAlwaysOnTop(): void {
+  if (!window || window.isDestroyed()) return;
+  if (settings.alwaysOnTop) {
+    // 'floating' keeps the companion above normal windows without fighting
+    // full-screen apps or system dialogs.
+    window.setAlwaysOnTop(true, 'floating');
+  } else {
+    window.setAlwaysOnTop(false);
+  }
+}
+
 function createWindow(): void {
   const position = clampToDisplay(settings.windowPosition ?? defaultPosition());
 
@@ -76,12 +96,10 @@ function createWindow(): void {
     },
   });
 
-  if (settings.alwaysOnTop) {
-    // 'floating' keeps the companion above normal windows without fighting
-    // full-screen apps or system dialogs.
-    window.setAlwaysOnTop(true, 'floating');
-  }
+  // Order matters: this clears the always-on-top hint on Linux, so it goes
+  // first and `applyAlwaysOnTop` re-asserts afterwards.
   window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+  applyAlwaysOnTop();
 
   // The window starts click-through; the renderer turns interaction back on
   // when the pointer is actually over the character or a panel.
@@ -100,7 +118,15 @@ function createWindow(): void {
     void window.loadFile(join(__dirname, '../../dist/index.html'));
   }
 
-  window.once('ready-to-show', () => window?.show());
+  window.once('ready-to-show', () => {
+    window?.show();
+    // Some Linux window managers only honour the hint once the window is
+    // actually mapped.
+    applyAlwaysOnTop();
+  });
+  // Losing focus is where a window manager is most likely to restack the
+  // companion behind whatever the user just clicked.
+  window.on('blur', () => applyAlwaysOnTop());
   window.on('closed', () => {
     window = null;
   });
@@ -145,9 +171,7 @@ function registerIpc(): void {
       model: { ...settings.model, ...(patch.model ?? {}) },
     };
     saveSettings(settings);
-    if (window && !window.isDestroyed()) {
-      window.setAlwaysOnTop(settings.alwaysOnTop, settings.alwaysOnTop ? 'floating' : 'normal');
-    }
+    applyAlwaysOnTop();
     return settings;
   });
 

@@ -57,7 +57,14 @@ These are promises made to users in `README.md`, not preferences:
   `electron/speech.ts` shells out to `spd-say`/`espeak-ng`. Speech recognition is often
   absent too; typing must always remain a complete input path.
 - Under WSLg, Electron logs GPU/`SharedImage` errors on startup. They are environmental
-  noise, not app faults.
+  noise, not app faults. Do not "fix" them by disabling the GPU — that changes how the
+  transparent overlay renders.
+- **Always-on-top must be re-asserted, not set once.** `setVisibleOnAllWorkspaces` clears
+  the hint on Linux, and window managers drop it on map and on blur. `applyAlwaysOnTop`
+  in `electron/main.ts` is the single place that applies it; it only touches stacking, so
+  it never disturbs the click-through mouse mask.
+- **`package.json` needs `homepage`.** electron-builder's Debian target treats it as
+  required metadata and the `.deb` build fails without it.
 
 ## Verifying UI changes for real
 
@@ -66,6 +73,15 @@ There is no headless screenshot tool in this environment. Launch the built app w
 (`Runtime.evaluate`, `Page.captureScreenshot`) from a throwaway Node script. That is how
 the layout and sprite regressions on this branch were actually found; unit tests alone
 did not surface them.
+
+Two traps when testing from a git worktree:
+
+- The app takes a **single-instance lock keyed on the shared user-data directory**
+  (`~/.config/Pixel Companion/`), so an instance running from another worktree makes
+  yours exit immediately and silently. Pass `--user-data-dir=<scratch path>` — and a
+  distinct `--remote-debugging-port` — to run one in parallel.
+- `scripts/run-linux.sh` is the fastest way to launch a build; `ELECTRON_EXTRA_ARGS`
+  passes those debugging flags through without editing the script.
 
 ## Maintaining this file
 

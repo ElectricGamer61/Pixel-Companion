@@ -29,6 +29,62 @@ functional without it.
 - [Node.js](https://nodejs.org) 18 or newer (20+ recommended)
 - Linux, macOS, or Windows
 
+## I just want to open it
+
+On **Linux or WSL**, there is a one-time setup and then a launcher you click.
+
+**Once, ever:**
+
+```bash
+./scripts/run-linux.sh                  # installs, builds, and starts the app
+./scripts/install-linux-launcher.sh     # adds "Pixel Companion" to your app menu
+```
+
+The first command is the only one that needs the network, and only for the npm
+install. Add `--desktop` to the second to also drop an icon on `~/Desktop`.
+
+**Every time after that:** open your application menu, search *Pixel Companion*,
+click it. No terminal, no reinstall, no rebuild.
+
+If you would rather stay in the terminal, `./scripts/run-linux.sh` on its own is
+the whole story: it installs dependencies only when `node_modules` is missing,
+rebuilds only when the source is newer than the last build, and otherwise starts
+the app immediately.
+
+| Command | What it does |
+| --- | --- |
+| `./scripts/run-linux.sh` | Install if needed, rebuild if stale, run |
+| `./scripts/run-linux.sh --no-build` | Run what is already built, as fast as possible |
+| `./scripts/run-linux.sh --rebuild` | Force a fresh build first |
+| `./scripts/install-linux-launcher.sh` | Create/refresh the app-menu entry |
+| `./scripts/install-linux-launcher.sh --uninstall` | Remove the entry and its icon |
+
+The launcher installer only ever writes inside your home directory, never needs
+`sudo`, and is safe to re-run — it rewrites the same two files:
+
+- `~/.local/share/applications/pixel-companion.desktop`
+- `~/.local/share/icons/hicolor/256x256/apps/pixel-companion.png`
+- `~/Desktop/pixel-companion.desktop` (only with `--desktop`)
+
+### WSL / WSLg limitations
+
+WSLg can publish Linux `.desktop` entries into the **Windows Start menu**, but
+that is a Windows-side integration, not something this project controls:
+
+- It only works on distributions that have WSL desktop-shortcut integration
+  enabled, and Windows refreshes its copy lazily — a brand-new entry may take a
+  minute, or a `wsl --shutdown`, to appear under your distro's Start-menu folder.
+- If it never appears, that is a WSLg limit rather than an app fault. Two
+  reliable fallbacks: run `./scripts/run-linux.sh` from a WSL terminal, or make a
+  Windows shortcut to
+  `wsl.exe -d <your distro> -- <path>/scripts/run-linux.sh` and pin that.
+- Under WSLg, Electron prints GPU / `SharedImage` warnings at startup. They are
+  environmental noise; the overlay renders correctly. The run script says so
+  rather than hiding it, and deliberately does not change the rendering path.
+
+On **macOS and Windows** the equivalent is `npm start` for now; packaged
+installers are on the [roadmap](#roadmap).
+
 ## Run it
 
 ```bash
@@ -196,6 +252,9 @@ src/shared/        Pure, dependency-free, compiled for BOTH processes
   llm.ts             Optional local-model client
   defaults.ts        Defaults and forward-compatible settings merging
 src/renderer/      UI: canvas character, chat panel, settings, speech
+scripts/           Local launch helpers (no build-system role)
+  run-linux.sh              Install-if-missing, build-if-stale, run
+  install-linux-launcher.sh Idempotent ~/.local .desktop entry
 tests/             Vitest suites for the shared logic
 ```
 
@@ -226,7 +285,10 @@ happy face, generated from the same sprite data the app draws.
 
 Verified on this branch: `npx electron-builder --linux AppImage` produces a
 working, self-contained `release/Pixel Companion-0.1.0.AppImage` (~103 MB), and
-the unpacked binary launches and persists settings.
+the unpacked binary launches and persists settings. `npx electron-builder
+--linux deb` produces `release/pixel-companion_0.1.0_amd64.deb` (~72 MB) — this
+one needs the `homepage` field in `package.json`, which Debian packaging treats
+as required metadata, so do not remove it.
 
 Notes for real distribution:
 
@@ -238,6 +300,34 @@ Notes for real distribution:
   Build each platform on that platform, or use free CI runners.
 - AppImages need FUSE on some distributions; `--appimage-extract-and-run` works
   where it is missing.
+
+## Why Electron, and what about Tauri?
+
+Both are free and open source, so this is not a cost question — it is a question
+of which one gets the MVP in front of people fastest.
+
+| | Electron (today) | Tauri |
+| --- | --- | --- |
+| Bundle size | ~70–100 MB, ships its own Chromium | ~5–10 MB, uses the OS webview |
+| Memory | Higher | Lower |
+| Toolchain | Node only | Node **plus** a Rust toolchain |
+| Transparent click-through overlay | Working here today | Supported, but the per-platform behaviour has to be re-proven |
+| Web Speech / OS speech fallback | Working here today | Webview-dependent; would need re-testing per platform |
+
+**Electron stays for the MVP.** The whole app is the overlay: a transparent,
+always-on-top, click-through window that has to sit correctly on X11, WSLg,
+Windows, and macOS. That behaviour is the risky part, it already works, and a
+port would mean re-proving it on every platform plus adding Rust to the build —
+paying a rewrite before the product idea has been validated.
+
+Tauri's advantage is real but it is a *distribution* advantage: a much smaller
+download. That matters when strangers install the app, not while the captain is
+checking the MVP. The one-click launcher above removes the friction that
+actually exists right now, at zero risk to the look and behaviour.
+
+Nothing here blocks a later port: everything interesting already lives in
+`src/shared/**`, which is pure TypeScript with no Electron and no DOM imports.
+A Tauri shell would reuse it as-is and rewrite only `electron/`.
 
 ## Roadmap
 
@@ -258,6 +348,10 @@ Deliberately out of scope for this first MVP, in rough priority order:
    lines in a plain JSON file without touching TypeScript.
 7. **Wayland positioning** — placement is accurate on X11, Win32, and macOS;
    native Wayland restricts programmatic window positioning.
+8. **Evaluate a Tauri shell** — worth revisiting once the product is validated
+   and download size starts to matter, for the reasons in
+   [Why Electron, and what about Tauri?](#why-electron-and-what-about-tauri).
+   It is a distribution optimisation, not an MVP task.
 
 ## Licence
 
