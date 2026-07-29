@@ -76,6 +76,20 @@ These are promises made to users in `README.md`, not preferences:
 - **`package.json` needs `homepage`.** electron-builder's Debian target treats it as
   required metadata and the `.deb` build fails without it.
 
+## Iterating on the Windows app from WSL
+
+Never repackage to test a change on Windows. `scripts/sync-windows-app.sh`
+(`npm run win`) builds locally and replaces only `resources/app.asar` inside the
+installed app folder — ~100 KB out of ~270 MB, about two seconds, no download.
+The desktop shortcut keeps pointing at the same unchanged `.exe`, so it never
+needs updating. It packs with the same `asar` binary electron-builder uses, which
+is why the result is byte-shaped exactly like a real package; the unpacked
+`resources/app` fallback moves `app.asar` aside rather than relying on Electron's
+precedence between the two.
+
+Note that `asar extract-file` writes into the **current directory**, so it will
+happily overwrite a source file of the same name — extract into a scratch dir.
+
 ## Verifying UI changes for real
 
 There is no headless screenshot tool in this environment. Launch the built app with

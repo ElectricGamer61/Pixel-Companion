@@ -82,7 +82,55 @@ that is a Windows-side integration, not something this project controls:
   environmental noise; the overlay renders correctly. The run script says so
   rather than hiding it, and deliberately does not change the rendering path.
 
-On **macOS and Windows** the equivalent is `npm start` for now; packaged
+### Windows, with the project living in WSL
+
+This is the fast way to try your own changes: keep the code in WSL, keep one
+real Windows app folder, and copy only the changed code across. **One command:**
+
+```bash
+npm run win        # build your changes, push them into the Windows app, start it
+```
+
+It takes a couple of seconds. Nothing is downloaded, and no installer is built.
+
+**Once, ever** — if you do not have the Windows app folder yet:
+
+```bash
+./scripts/sync-windows-app.sh --bootstrap --shortcut
+```
+
+That fetches the Windows runtime one time, puts the app in
+`C:\Users\<you>\PixelCompanionWin\`, and creates a **Pixel Companion** shortcut
+on your desktop. After that you never need it again.
+
+**To use the desktop shortcut:** point it at
+`C:\Users\<you>\PixelCompanionWin\Pixel Companion.exe`. Run
+`./scripts/sync-windows-app.sh --shortcut` and the shortcut is created or
+refreshed for you. The shortcut never has to change again: syncing replaces the
+code *inside* that same app, so the icon you click always runs your latest work.
+
+**Packaged builds are only for sharing.** `npm run package` produces a ~100 MB
+installer for giving the app to somebody else. You never need it to try your own
+changes.
+
+| Command | What it does |
+| --- | --- |
+| `npm run win` | Build, sync into the Windows app, launch it |
+| `./scripts/sync-windows-app.sh` | Build and sync, without launching |
+| `./scripts/sync-windows-app.sh --shortcut` | Also create/refresh the desktop shortcut |
+| `./scripts/sync-windows-app.sh --bootstrap` | First-time install of the Windows app folder |
+| `./scripts/sync-windows-app.sh --dir '<path>'` | Use an app folder somewhere else |
+
+The app folder can also be set once with the `PIXEL_COMPANION_WIN_DIR`
+environment variable. To remove the shortcut:
+`powershell.exe -ExecutionPolicy Bypass -File scripts\install-windows-shortcut.ps1 -Remove`.
+
+Why this works: the Windows app is ~270 MB of Electron runtime plus ~100 KB of
+this project's own code, and only that small part changes while you iterate. The
+sync rebuilds it locally and swaps it in, so there is no reinstall, no download,
+and no packaging step in the loop.
+
+On **macOS**, and on Windows without WSL, `npm start` is the equivalent; packaged
 installers are on the [roadmap](#roadmap).
 
 ## Run it
@@ -298,6 +346,8 @@ src/renderer/      UI: canvas character, chat panel, settings, speech
 scripts/           Local launch helpers (no build-system role)
   run-linux.sh              Install-if-missing, build-if-stale, run
   install-linux-launcher.sh Idempotent ~/.local .desktop entry
+  sync-windows-app.sh       Push local changes into the installed Windows app
+  install-windows-shortcut.ps1 Idempotent Windows desktop shortcut
 tests/             Vitest suites for the shared logic
 ```
 
@@ -314,6 +364,10 @@ grid dimensions, palette validity, that no face pixel lands outside the body, ey
 symmetry, and that every animation references a face that exists.
 
 ## Packaging
+
+Packaging is for **giving the app to somebody else**. To try your own changes,
+use `./scripts/run-linux.sh` or `npm run win` instead — neither one packages
+anything.
 
 ```bash
 npm run package                    # installer for your current platform

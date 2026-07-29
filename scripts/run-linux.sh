@@ -8,6 +8,7 @@
 #   ./scripts/run-linux.sh              # install if needed, rebuild if stale, run
 #   ./scripts/run-linux.sh --rebuild    # force a fresh build first
 #   ./scripts/run-linux.sh --no-build   # run whatever is already built, never build
+#   ./scripts/run-linux.sh --build-only # install/build only, do not start the app
 #
 # Nothing here needs the network except the very first `npm install`, and
 # nothing here needs a paid service.
@@ -19,12 +20,14 @@ cd "$PROJECT_DIR"
 
 FORCE_BUILD=0
 SKIP_BUILD=0
+BUILD_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --rebuild) FORCE_BUILD=1 ;;
     --no-build) SKIP_BUILD=1 ;;
+    --build-only) BUILD_ONLY=1 ;;
     -h | --help)
-      sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -99,6 +102,13 @@ else
 fi
 
 # --- 3. Launch --------------------------------------------------------------
+# sync-windows-app.sh reuses steps 1 and 2 and stops here: it wants the compiled
+# output, not a running Linux window.
+if [ "$BUILD_ONLY" -eq 1 ]; then
+  log "Build ready in dist/ and dist-electron/ (--build-only, not starting the app)."
+  exit 0
+fi
+
 ELECTRON_ARGS=()
 
 # Electron's sandbox helper needs to be setuid root. Distro kernels with
