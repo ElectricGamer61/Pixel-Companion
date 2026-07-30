@@ -157,9 +157,17 @@ you in the wrong corner.
 **Several `Pixel Companion.exe` processes in Task Manager is one running companion.**
 Electron always forks a GPU process, a utility process, and a renderer alongside main, so
 four entries is the healthy shape. `app.requestSingleInstanceLock()` in `electron/main.ts`
-keys on the per-user data directory and has held since the MVP: measured, six launches
-from the desktop shortcut produce exactly one main process. Look for more than one
-*main* (no `--type=` in its command line) before suspecting a pile-up.
+keys on the per-user data directory: measured, six launches produce exactly one main
+process, each loser exiting in ~200 ms. Look for more than one *main* (no `--type=` in
+its command line) before suspecting a pile-up.
+
+**The losing instance must `app.exit(0)`, never `app.quit()`.** That branch runs before
+`app.whenReady()`, and a graceful quit needs the message loop to reach its shutdown, so
+pre-ready `app.quit()` is simply dropped: measured on Electron 33, every extra launch left
+a windowless main process alive forever (six launches, six survivors, only SIGTERM ended
+them). Nothing is visible on screen, which is what makes it easy to miss — the tell is the
+process list, not the desktop. The loser owns no window and no state (the primary holds
+`settings.json`), so there is nothing to unwind.
 
 Two traps when testing from a git worktree:
 
@@ -169,6 +177,11 @@ Two traps when testing from a git worktree:
   distinct `--remote-debugging-port` — to run one in parallel.
 - `scripts/run-linux.sh` is the fastest way to launch a build; `ELECTRON_EXTRA_ARGS`
   passes those debugging flags through without editing the script.
+
+A taken `--remote-debugging-port` fails **silently**: Electron starts and the app runs
+normally, but no `DevTools listening on ...` line appears and `/json/list` answers for
+whatever already owns the port — so a driver script happily attaches to an unrelated app
+and reports nonsense. Grep the launch log for that line before trusting a CDP session.
 
 ## Maintaining this file
 

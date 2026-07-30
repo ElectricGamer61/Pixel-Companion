@@ -388,7 +388,15 @@ function registerIpc(): void {
 // "Pixel Companion.exe" entries in Task Manager are one running companion, not
 // a pile-up).
 if (!app.requestSingleInstanceLock()) {
-  app.quit();
+  // `app.exit`, not `app.quit`. A graceful quit needs the message loop to reach
+  // its shutdown, and this runs before `whenReady`: measured on Electron 33,
+  // `app.quit()` here never terminated the process at all — every extra click on
+  // the desktop shortcut left another windowless main process behind (six
+  // launches, six survivors, killed only by SIGTERM). The losing instance owns
+  // no window and no state — the primary holds the settings file — so there is
+  // nothing to unwind, and exiting outright is both correct and immediate
+  // (measured: ~200ms, exit code 0).
+  app.exit(0);
 } else {
   app.on('second-instance', () => {
     // A companion whose window was somehow lost still has to answer the second
