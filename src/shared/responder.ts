@@ -78,21 +78,50 @@ const SKIPPED = '(?:skip|skips|skipped|skipping|missed|missing|bailed on|blew of
 const NEGATION = "(?:didn'?t|did not|haven'?t|have not|hadn'?t|had not|hasn'?t|never|not|no)";
 
 /**
- * Contexts in which a workout sentence is not a report of a workout: a denial,
- * a plan for later, or the idiom "it all worked out". `exercise_done` is a claim
- * about something that already happened, so any of these disqualifies it.
+ * "Work out" in its figure-out and turn-out senses, which are not exercise at
+ * all: "work out the budget", "I never worked out what she meant", "it all
+ * worked out". Both exercise intents have to stand clear of them.
+ */
+const WORK_OUT_IDIOM: RegExp[] = [
+  // No "this" or "when": they lead a time, not a clause — "worked out this
+  // morning" and "worked out when I got home" are both real workouts.
+  /\bwork(?:ed|s|ing)? ?out (?:how|what|why|whether|where|if|that|the)\b/,
+  /\b(?:it|that|this|things|everything|all) (?:all )?work(?:ed|s)? ?out\b/,
+  /\bwork(?:ed|s)? ?out (?:well|fine|great|ok|okay|nicely|badly|in the end)\b/,
+];
+
+/**
+ * Contexts in which a workout phrase is not a report of a workout: a denial or
+ * a plan for later. `exercise_done` is a claim about something that already
+ * happened, so any of these alongside it disqualifies it.
  */
 const NOT_A_FINISHED_WORKOUT: RegExp[] = [
   new RegExp(`\\b${NEGATION}\\b`),
   /\b(?:going to|gonna|about to|planning to|plan to|planning on|heading to|headed to|off to|need to|needs to|want to|have to|has to|got to|gotta|should|i'?ll|we'?ll|will)\b/,
-  /\b(?:it|that|this|things|everything|all) (?:all )?worked out\b/,
-  /\bworked out (?:well|fine|great|ok|okay|nicely|badly|in the end)\b/,
+  ...WORK_OUT_IDIOM,
 ];
 
 /**
+ * Where one clause ends and the next begins. A veto like "not" belongs to the
+ * clause it sits in — "I went to the gym but it was not easy" is still a
+ * workout — so a vetoed rule is matched one clause at a time.
+ */
+const CLAUSE_BOUNDARY =
+  /[,;.!?]+|\b(?:but|and|so|then|though|although|because|while|yet|however)\b/;
+
+function clausesOf(text: string): string[] {
+  const parts = text
+    .split(CLAUSE_BOUNDARY)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : [text];
+}
+
+/**
  * Ordered: the first matching rule wins, so more specific intents come first.
- * A rule with `unless` is skipped when any of those patterns match, which is how
- * an intent can require a context rather than just a phrase.
+ * A rule with `unless` is matched clause by clause and skipped for any clause
+ * one of those patterns vetoes, which is how an intent can require a context
+ * rather than just a phrase.
  */
 const RULES: { intent: Intent; patterns: RegExp[]; unless?: RegExp[] }[] = [
   {
@@ -154,7 +183,10 @@ const RULES: { intent: Intent; patterns: RegExp[]; unless?: RegExp[] }[] = [
   {
     intent: 'sad',
     patterns: [
-      /\b(sad|down|depressed|low|miserable|unhappy|crying|cried|heartbroken|hopeless|numb|empty)\b/,
+      /\b(sad|down|depressed|miserable|unhappy|crying|cried|heartbroken|hopeless)\b/,
+      // `low`, `numb` and `empty` need a feeling frame: on their own they are an
+      // empty gym, a numb hand, or a low battery.
+      /\b(?:feel|feels|feeling|felt|i am|i'?m) (?:so |really |kind of |a bit )?(?:low|numb|empty)\b/,
       /\bfeel(ing)? (bad|awful|terrible|rough|like crap|like shit)\b/,
       /\b(rough|bad|terrible|awful) (day|week|morning|night)\b/,
     ],
@@ -194,6 +226,7 @@ const RULES: { intent: Intent; patterns: RegExp[]; unless?: RegExp[] }[] = [
       ),
       /\brest day\b/,
     ],
+    unless: WORK_OUT_IDIOM,
   },
   {
     intent: 'exercise_done',
@@ -448,9 +481,17 @@ export function detectIntent(input: string): Intent {
   const text = normalize(input);
   if (!text) return 'unclear';
   if (SAFETY_PATTERNS.some((pattern) => pattern.test(text))) return 'safety';
+  const clauses = clausesOf(text);
   for (const rule of RULES) {
-    if (rule.unless?.some((pattern) => pattern.test(text))) continue;
-    if (rule.patterns.some((pattern) => pattern.test(text))) return rule.intent;
+    if (!rule.unless) {
+      if (rule.patterns.some((pattern) => pattern.test(text))) return rule.intent;
+      continue;
+    }
+    for (const clause of clauses) {
+      if (!rule.patterns.some((pattern) => pattern.test(clause))) continue;
+      if (rule.unless.some((pattern) => pattern.test(clause))) continue;
+      return rule.intent;
+    }
   }
   return 'unclear';
 }

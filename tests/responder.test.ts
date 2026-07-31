@@ -78,32 +78,48 @@ describe('detectIntent', () => {
     }
   });
 
-  it('does not congratulate a workout that has not happened', () => {
-    // A plan, a refusal, or an idiom is not a report of a finished workout, and
-    // "You went. That is the hard part" to someone who just said they are not
-    // going is the single worst thing this rule could do.
+  it('still hears the workout when the rest of the sentence is negative', () => {
+    // A "not" later in the sentence is about how the workout went, not about
+    // whether it happened. Losing these is how a finished workout ends up
+    // getting a shrug, or worse, a to-do list reply.
     for (const text of [
-      'i am not going to the gym today',
-      'going to skip the gym tonight',
-      'i will hit the gym later',
-      'we need to work out the budget',
-      'it all worked out in the end',
+      'i went to the gym but it was not easy',
+      'i worked out this morning, no excuses',
+      'i went to the gym, no idea why it was so empty',
+      'did some yoga, not my best session',
+      'i went for a run and it was not fun',
+      'i worked out and now i have to shower',
     ]) {
+      expect(detectIntent(text), text).toBe('exercise_done');
+    }
+  });
+
+  it('does not congratulate a workout that has not happened', () => {
+    // A plan or a refusal is not a report of a finished workout, and "You went.
+    // That is the hard part" to someone who just said they are not going is the
+    // single worst thing this rule could do.
+    for (const text of ['i am not going to the gym today', 'going to skip the gym tonight']) {
+      expect(detectIntent(text), text).toBe('exercise_missed');
+    }
+    for (const text of ['i will hit the gym later', 'it all worked out in the end']) {
       expect(detectIntent(text), text).not.toBe('exercise_done');
     }
   });
 
-  it('does not read ordinary verbs as a skipped workout', () => {
-    // `run`, `walk` and `move` are everyday verbs; only an exercise noun, or a
-    // span of time next to "moved", makes them a missed workout.
+  it('does not read ordinary verbs or the "figure out" sense as exercise', () => {
+    // `run`, `walk` and `move` are everyday verbs, and "work out" is as often
+    // "figure out" as it is a workout.
     for (const text of [
+      'we need to work out the budget',
+      "i haven't worked out how to fix this bug",
+      'i never worked out what she meant',
       "i didn't get the build to run",
       "i haven't had time to run errands",
       'no time to walk the dog',
       'i never move fast enough at work',
       'i had a lazy day',
-      'we need to work out the budget',
     ]) {
+      expect(detectIntent(text), text).not.toBe('exercise_done');
       expect(detectIntent(text), text).not.toBe('exercise_missed');
     }
   });
