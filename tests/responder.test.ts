@@ -53,6 +53,23 @@ describe('detectIntent', () => {
     expect(detectIntent('I finished the thing and I am proud')).toBe('positive');
   });
 
+  it('hears a flat, low mood however it is worded', () => {
+    // `low`, `numb` and `empty` carry a lot of the low-mood vocabulary, and no
+    // test used to cover them — which is how they quietly stopped counting as
+    // sad. The intensifier is deliberately not an allowlist.
+    for (const text of [
+      'i feel very low',
+      'i feel completely numb',
+      'i feel pretty numb',
+      'i feel utterly empty',
+      "i've been low all week",
+      'my mood is low',
+      'everything is empty',
+    ]) {
+      expect(detectIntent(text), text).toBe('sad');
+    }
+  });
+
   it('hears whether the gym actually happened', () => {
     for (const text of [
       'I went to the gym',
@@ -73,6 +90,11 @@ describe('detectIntent', () => {
       'I have not moved all day',
       'no gym today',
       'taking a rest day',
+      // A quantity or a stretch of time after "worked out" is a lapse being
+      // reported, not the "figure out" idiom.
+      "i haven't worked out that much lately",
+      'i did not work out the whole week',
+      "i haven't worked out much this week",
     ]) {
       expect(detectIntent(text), text).toBe('exercise_missed');
     }

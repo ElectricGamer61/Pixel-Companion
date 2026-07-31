@@ -78,6 +78,17 @@ const SKIPPED = '(?:skip|skips|skipped|skipping|missed|missing|bailed on|blew of
 const NEGATION = "(?:didn'?t|did not|haven'?t|have not|hadn'?t|had not|hasn'?t|never|not|no)";
 
 /**
+ * Low-mood words that double as ordinary descriptions of a thing: an empty gym,
+ * a numb hand, a low battery. What makes one of them a feeling is the subject —
+ * the person, or their whole world. The span between subject and word is open on
+ * purpose, because "very", "utterly", "kind of" and whatever else someone
+ * reaches for all have to work.
+ */
+const LOW_MOOD = '(?:low(?! on\\b)|numb|empty|flat|hollow)';
+const LOW_MOOD_SUBJECT =
+  "(?:i feel|i felt|i'?m feeling|i'?ve been|i have been|i was|i am|i'?m|feeling|feels|felt|my mood is|my mood has been|everything is|everything feels|it all feels)";
+
+/**
  * "Work out" in its figure-out and turn-out senses, which are not exercise at
  * all: "work out the budget", "I never worked out what she meant", "it all
  * worked out". Both exercise intents have to stand clear of them.
@@ -85,7 +96,12 @@ const NEGATION = "(?:didn'?t|did not|haven'?t|have not|hadn'?t|had not|hasn'?t|n
 const WORK_OUT_IDIOM: RegExp[] = [
   // No "this" or "when": they lead a time, not a clause — "worked out this
   // morning" and "worked out when I got home" are both real workouts.
-  /\bwork(?:ed|s|ing)? ?out (?:how|what|why|whether|where|if|that|the)\b/,
+  /\bwork(?:ed|s|ing)? ?out (?:how|what|why|whether|where|if)\b/,
+  // "that" and "the" only introduce the figure-out sense when what follows is a
+  // thing. "Worked out that much" and "work out the whole week" are quantities
+  // and time windows — someone reporting a lapse, not solving a problem.
+  /\bwork(?:ed|s|ing)? ?out that\b(?! (?:much|many|often|hard|long|far|regularly))/,
+  /\bwork(?:ed|s|ing)? ?out the\b(?! (?:whole|last|past|first|next|other|entire|rest|full|week|month|year|day|weekend))/,
   /\b(?:it|that|this|things|everything|all) (?:all )?work(?:ed|s)? ?out\b/,
   /\bwork(?:ed|s)? ?out (?:well|fine|great|ok|okay|nicely|badly|in the end)\b/,
 ];
@@ -184,9 +200,7 @@ const RULES: { intent: Intent; patterns: RegExp[]; unless?: RegExp[] }[] = [
     intent: 'sad',
     patterns: [
       /\b(sad|down|depressed|miserable|unhappy|crying|cried|heartbroken|hopeless)\b/,
-      // `low`, `numb` and `empty` need a feeling frame: on their own they are an
-      // empty gym, a numb hand, or a low battery.
-      /\b(?:feel|feels|feeling|felt|i am|i'?m) (?:so |really |kind of |a bit )?(?:low|numb|empty)\b/,
+      new RegExp(`\\b${LOW_MOOD_SUBJECT} (?:\\w+ ){0,2}${LOW_MOOD}\\b`),
       /\bfeel(ing)? (bad|awful|terrible|rough|like crap|like shit)\b/,
       /\b(rough|bad|terrible|awful) (day|week|morning|night)\b/,
     ],
