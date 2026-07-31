@@ -61,8 +61,40 @@ const SAFETY_PATTERNS: RegExp[] = [
   /\bcut(ting)?\s+my\s?self\b/,
 ];
 
-/** Ordered: the first matching rule wins, so more specific intents come first. */
-const RULES: { intent: Intent; patterns: RegExp[] }[] = [
+/**
+ * Exercise vocabulary, split by how much a word can be trusted on its own.
+ *
+ * `EXERCISE_NOUN` words can only really mean exercise. `ACTIVITY_NOUN` words —
+ * run, walk, ride, class — are ordinary English verbs as often as they are
+ * workouts, so they only count when a determiner makes them a noun. That split
+ * is what keeps "I didn't get the build to run" out of the exercise intents.
+ */
+const EXERCISE_NOUN =
+  '(?:gym|work(?:ed|s)? ?out|training|exercise|yoga|pilates|cardio|crossfit|weights|spin class)';
+const ACTIVITY_NOUN =
+  "(?:(?:a|an|my|the|our|another|today'?s) (?:run|jog|walk|swim|ride|cycle|lift|class|session))";
+const ANY_EXERCISE = `(?:${EXERCISE_NOUN}|${ACTIVITY_NOUN})`;
+const SKIPPED = '(?:skip|skips|skipped|skipping|missed|missing|bailed on|blew off|flaked on)';
+const NEGATION = "(?:didn'?t|did not|haven'?t|have not|hadn'?t|had not|hasn'?t|never|not|no)";
+
+/**
+ * Contexts in which a workout sentence is not a report of a workout: a denial,
+ * a plan for later, or the idiom "it all worked out". `exercise_done` is a claim
+ * about something that already happened, so any of these disqualifies it.
+ */
+const NOT_A_FINISHED_WORKOUT: RegExp[] = [
+  new RegExp(`\\b${NEGATION}\\b`),
+  /\b(?:going to|gonna|about to|planning to|plan to|planning on|heading to|headed to|off to|need to|needs to|want to|have to|has to|got to|gotta|should|i'?ll|we'?ll|will)\b/,
+  /\b(?:it|that|this|things|everything|all) (?:all )?worked out\b/,
+  /\bworked out (?:well|fine|great|ok|okay|nicely|badly|in the end)\b/,
+];
+
+/**
+ * Ordered: the first matching rule wins, so more specific intents come first.
+ * A rule with `unless` is skipped when any of those patterns match, which is how
+ * an intent can require a context rather than just a phrase.
+ */
+const RULES: { intent: Intent; patterns: RegExp[]; unless?: RegExp[] }[] = [
   {
     intent: 'gratitude',
     patterns: [/\bthank(s| you)\b/, /\bappreciate (it|you|that)\b/, /\bthat helped\b/],
@@ -153,23 +185,28 @@ const RULES: { intent: Intent; patterns: RegExp[] }[] = [
   {
     intent: 'exercise_missed',
     patterns: [
-      /\b(skipped|missed|bailed on|blew off|flaked on)\b[^.!?]{0,24}\b(gym|workout|work ?out|run|ride|swim|training|exercise|yoga|class|session)\b/,
-      /\b(didn'?t|did not|haven'?t|have not|never|no)\b[^.!?]{0,24}\b(gym|work ?out|worked out|exercise[ds]?|training|trained|move|moved|walk|run)\b/,
-      /\bno gym\b/,
-      /\b(rest|lazy|couch) day\b/,
+      new RegExp(`\\b${SKIPPED}\\b[^.!?]{0,24}\\b${ANY_EXERCISE}\\b`),
+      new RegExp(`\\b${NEGATION}\\b[^.!?]{0,24}\\b${EXERCISE_NOUN}\\b`),
+      // "Moved" only counts next to a span of time; otherwise "I never move fast
+      // enough at work" reads as a skipped workout.
+      new RegExp(
+        `\\b${NEGATION}\\b[^.!?]{0,16}\\bmoved?\\b[^.!?]{0,12}\\b(?:all day|today|at all|yet|since)\\b`,
+      ),
+      /\brest day\b/,
     ],
   },
   {
     intent: 'exercise_done',
     patterns: [
-      /\b(went|going|made it|back|home)\b[^.!?]{0,20}\b(the )?gym\b/,
+      /\b(?:went|got back|came back|been)\b[^.!?]{0,20}\bthe gym\b/,
       /\bhit the gym\b/,
-      /\b(worked out|work ?out|workout|lifted|trained|trained legs|trained today)\b/,
-      /\bwent (for|on) a (run|walk|jog|swim|ride|cycle)\b/,
-      /\bdid (my |some |a )?(yoga|cardio|pilates|stretching|steps|reps|sets)\b/,
-      /\b(gym|workout|training|exercise|run) (was|felt|went)\b/,
-      /\bgot (my |some )?(steps|movement|exercise)\b/,
+      /\b(?:worked out|workout|lifted|trained)\b/,
+      /\bwent (?:for|on) (?:a|my|the|another) (?:run|jog|walk|swim|ride|cycle|hike)\b/,
+      /\bdid (?:my |some |an? |the )?(?:yoga|cardio|pilates|stretching|steps|reps|sets|weights|workout|exercise)\b/,
+      new RegExp(`\\b${EXERCISE_NOUN} (?:was|felt|went)\\b`),
+      /\bgot (?:my |some )?(?:steps|movement|exercise)\b/,
     ],
+    unless: NOT_A_FINISHED_WORKOUT,
   },
   {
     intent: 'accountability',
@@ -412,6 +449,7 @@ export function detectIntent(input: string): Intent {
   if (!text) return 'unclear';
   if (SAFETY_PATTERNS.some((pattern) => pattern.test(text))) return 'safety';
   for (const rule of RULES) {
+    if (rule.unless?.some((pattern) => pattern.test(text))) continue;
     if (rule.patterns.some((pattern) => pattern.test(text))) return rule.intent;
   }
   return 'unclear';

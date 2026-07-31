@@ -16,7 +16,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
     gymTime: '18:00',
     gymDays: '12345',
     lifeEnabled: true,
-    lifeTime: '17:00',
+    // A whole DAILY_GRACE_MINUTES clear of the gym slot, so the two windows
+    // cannot overlap: only the latest due check-in fires, and an overlap would
+    // mean the earlier question was routinely marked done without being asked.
+    lifeTime: '15:00',
     intervalEnabled: false,
     intervalMinutes: 120,
   },

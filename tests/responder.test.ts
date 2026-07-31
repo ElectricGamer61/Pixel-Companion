@@ -78,6 +78,36 @@ describe('detectIntent', () => {
     }
   });
 
+  it('does not congratulate a workout that has not happened', () => {
+    // A plan, a refusal, or an idiom is not a report of a finished workout, and
+    // "You went. That is the hard part" to someone who just said they are not
+    // going is the single worst thing this rule could do.
+    for (const text of [
+      'i am not going to the gym today',
+      'going to skip the gym tonight',
+      'i will hit the gym later',
+      'we need to work out the budget',
+      'it all worked out in the end',
+    ]) {
+      expect(detectIntent(text), text).not.toBe('exercise_done');
+    }
+  });
+
+  it('does not read ordinary verbs as a skipped workout', () => {
+    // `run`, `walk` and `move` are everyday verbs; only an exercise noun, or a
+    // span of time next to "moved", makes them a missed workout.
+    for (const text of [
+      "i didn't get the build to run",
+      "i haven't had time to run errands",
+      'no time to walk the dog',
+      'i never move fast enough at work',
+      'i had a lazy day',
+      'we need to work out the budget',
+    ]) {
+      expect(detectIntent(text), text).not.toBe('exercise_missed');
+    }
+  });
+
   it('answers the feeling before the habit when a message has both', () => {
     // "I skipped the gym" plus self-criticism is a self-critical message, and
     // the gym part is the least important thing in it.

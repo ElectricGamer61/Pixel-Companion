@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  DAILY_GRACE_MINUTES,
   DAY_LABELS,
   dayAllowed,
   dayKey,
@@ -160,25 +161,42 @@ describe('evaluateCheckIns', () => {
   });
 
   it('asks one thing at a time when several check-ins are due at once', () => {
-    // At 18:10 both the day question (17:00) and the gym question (18:00) are
-    // inside their grace windows. A friend asks the newer one, not both.
-    const result = evaluateCheckIns(at(18, 10, 14), settings(), state());
+    // Deliberately overlapping times: at 18:10 both the day question (17:00) and
+    // the gym question (18:00) are inside their grace windows. A friend asks the
+    // newer one, not both.
+    const clashing = settings({ lifeTime: '17:00' });
+    const result = evaluateCheckIns(at(18, 10, 14), clashing, state());
     expect(result.events).toHaveLength(1);
     expect(result.events[0].kind).toBe('gym');
     // The displaced question is closed out rather than queued for the next tick.
     expect(result.state.lastLifeDay).toBe(dayKey(at(18, 10, 14)));
-    expect(evaluateCheckIns(at(18, 11, 14), settings(), result.state).events).toEqual([]);
+    expect(evaluateCheckIns(at(18, 11, 14), clashing, result.state).events).toEqual([]);
+  });
+
+  it('spaces the shipped daily defaults so none of them is silently swallowed', () => {
+    // Because only the latest due check-in fires and the rest are marked done,
+    // two default slots inside one grace window would mean the earlier question
+    // was routinely closed out without ever being asked.
+    const { morningTime, gymTime, lifeTime, eveningTime } = DEFAULT_SETTINGS.checkIns;
+    const starts = [morningTime, gymTime, lifeTime, eveningTime]
+      .map((time) => parseTimeOfDay(time) as number)
+      .sort((a, b) => a - b);
+    for (let i = 1; i < starts.length; i += 1) {
+      expect(starts[i] - starts[i - 1], `${starts[i - 1]} vs ${starts[i]}`).toBeGreaterThanOrEqual(
+        DAILY_GRACE_MINUTES,
+      );
+    }
   });
 
   it('asks what you did with your day', () => {
-    const result = evaluateCheckIns(at(17, 5), settings(), state());
+    const result = evaluateCheckIns(at(15, 5), settings(), state());
     expect(result.events.map((e) => e.kind)).toEqual(['life']);
-    expect(result.state.lastLifeDay).toBe(dayKey(at(17, 5)));
+    expect(result.state.lastLifeDay).toBe(dayKey(at(15, 5)));
   });
 
   it('asks each buddy question at most once a day', () => {
-    const first = evaluateCheckIns(at(17, 5), settings(), state());
-    expect(evaluateCheckIns(at(17, 40), settings(), first.state).events).toEqual([]);
+    const first = evaluateCheckIns(at(15, 5), settings(), state());
+    expect(evaluateCheckIns(at(16, 40), settings(), first.state).events).toEqual([]);
     const gym = evaluateCheckIns(at(18, 5), settings(), first.state);
     expect(gym.events.map((e) => e.kind)).toEqual(['gym']);
     expect(evaluateCheckIns(at(18, 40), settings(), gym.state).events).toEqual([]);
@@ -187,7 +205,7 @@ describe('evaluateCheckIns', () => {
   it('lets the buddy check-ins be turned off one at a time', () => {
     const noGym = evaluateCheckIns(at(18, 10), settings({ gymEnabled: false }), state());
     expect(noGym.events.map((e) => e.kind)).not.toContain('gym');
-    expect(evaluateCheckIns(at(17, 5), settings({ lifeEnabled: false }), state()).events).toEqual(
+    expect(evaluateCheckIns(at(15, 5), settings({ lifeEnabled: false }), state()).events).toEqual(
       [],
     );
     // The master switch still covers both of them.

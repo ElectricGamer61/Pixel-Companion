@@ -1,6 +1,7 @@
 import './styles.css';
 
 import { DAY_LABELS, normalizeDays } from '../shared/checkins';
+import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { homeLine, openingLine, respond, systemPrompt } from '../shared/responder';
 import type {
   AppSettings,
@@ -86,8 +87,25 @@ let peekTurn = 0;
  * "not today" is read as an answer to it. In memory for one reply only, and
  * never persisted — it is part of the conversation, and conversations are not
  * written to disk.
+ *
+ * It also expires: the question has to still be on screen for a bare "yeah" to
+ * be an answer to it, so the topic dies with the bubble that carried it and, as
+ * a backstop for the panel, after `TOPIC_TTL_MS`.
  */
+const TOPIC_TTL_MS = 10 * 60_000;
 let openTopic: CheckInTopic | null = null;
+let openTopicUntil = 0;
+
+function setOpenTopic(topic: CheckInTopic | null): void {
+  openTopic = topic;
+  openTopicUntil = topic ? Date.now() + TOPIC_TTL_MS : 0;
+}
+
+/** The check-in still awaiting an answer, or undefined once it has gone stale. */
+function currentTopic(): CheckInTopic | undefined {
+  if (openTopic && Date.now() > openTopicUntil) setOpenTopic(null);
+  return openTopic ?? undefined;
+}
 
 /* ------------------------------------------------------------- mood ----- */
 
@@ -367,7 +385,7 @@ function context(): {
     userName: settings.userName,
     turn,
     hour: new Date().getHours(),
-    topic: openTopic ?? undefined,
+    topic: currentTopic(),
   };
 }
 
@@ -405,7 +423,7 @@ async function send(raw: string): Promise<void> {
   // safety classification takes priority over anything a model might say.
   const offline = respond(text, context());
   // The check-in has been answered; the next message is its own message again.
-  openTopic = null;
+  setOpenTopic(null);
   holdMood('thinking', 30_000);
   const typing = showTyping();
 
@@ -514,19 +532,33 @@ document.addEventListener('keydown', (event) => {
 
 let bubbleTimer: number | null = null;
 
+function hideBubble(): void {
+  dom.bubble.hidden = true;
+  if (bubbleTimer !== null) {
+    window.clearTimeout(bubbleTimer);
+    bubbleTimer = null;
+  }
+}
+
 function showBubble(text: string, ms = 22_000): void {
   hidePeek();
   dom.bubble.textContent = text;
   dom.bubble.hidden = false;
   if (bubbleTimer !== null) window.clearTimeout(bubbleTimer);
   bubbleTimer = window.setTimeout(() => {
+    bubbleTimer = null;
     dom.bubble.hidden = true;
+    // The question has gone off screen unanswered, so there is nothing left for
+    // a bare "yeah" hours later to be an answer to.
+    setOpenTopic(null);
   }, ms);
 }
 
 dom.bubble.addEventListener('click', () => {
   const text = dom.bubble.textContent ?? '';
-  dom.bubble.hidden = true;
+  // Cancel the auto-hide: the question moves into the panel, so it is still the
+  // thing being answered.
+  hideBubble();
   setPanelOpen(true);
   if (text) {
     appendMessage(text, 'them');
@@ -539,7 +571,7 @@ function onCheckIn(event: CheckInEvent): void {
   // A gym or life check-in is a question with a yes/no shape, so remember which
   // one was asked: it is the difference between "nope" landing as an answer and
   // landing as nothing at all.
-  openTopic = event.kind === 'gym' || event.kind === 'life' ? event.kind : null;
+  setOpenTopic(event.kind === 'gym' || event.kind === 'life' ? event.kind : null);
   holdMood(event.kind === 'evening' ? 'listening' : 'happy');
   if (panelOpen) {
     appendMessage(event.message, 'them');
@@ -687,18 +719,23 @@ async function persist(): Promise<void> {
     checkIns: {
       enabled: fields.checkInsEnabled.checked,
       morningEnabled: fields.morningEnabled.checked,
-      morningTime: fields.morningTime.value || '09:00',
+      // A cleared time field falls back to the shipped default rather than a
+      // literal, so the two can never drift apart.
+      morningTime: fields.morningTime.value || DEFAULT_SETTINGS.checkIns.morningTime,
       eveningEnabled: fields.eveningEnabled.checked,
-      eveningTime: fields.eveningTime.value || '21:00',
+      eveningTime: fields.eveningTime.value || DEFAULT_SETTINGS.checkIns.eveningTime,
       gymEnabled: fields.gymEnabled.checked,
-      gymTime: fields.gymTime.value || '18:00',
+      gymTime: fields.gymTime.value || DEFAULT_SETTINGS.checkIns.gymTime,
       // An empty selection is repaired to the weekday default by mergeSettings,
       // so the toggle can never end up on but silently unable to fire.
       gymDays: selectedDays(),
       lifeEnabled: fields.lifeEnabled.checked,
-      lifeTime: fields.lifeTime.value || '17:00',
+      lifeTime: fields.lifeTime.value || DEFAULT_SETTINGS.checkIns.lifeTime,
       intervalEnabled: fields.intervalEnabled.checked,
-      intervalMinutes: Number.isFinite(minutes) && minutes >= 5 ? Math.round(minutes) : 120,
+      intervalMinutes:
+        Number.isFinite(minutes) && minutes >= 5
+          ? Math.round(minutes)
+          : DEFAULT_SETTINGS.checkIns.intervalMinutes,
     },
     voice: {
       speakReplies: fields.speakReplies.checked,

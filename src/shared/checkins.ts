@@ -4,6 +4,9 @@ import type { CheckInEvent, CheckInKind, CheckInSettings, CheckInState } from '.
  * How long after its scheduled time a daily check-in is still allowed to fire.
  * Without this, launching the app at 11pm would immediately trigger a "good
  * morning" nudge.
+ *
+ * The window is half-open — `[time, time + grace)` — so slots spaced a whole
+ * grace period apart tile the day without ever being due at the same minute.
  */
 export const DAILY_GRACE_MINUTES = 180;
 
@@ -159,7 +162,7 @@ export function evaluateCheckIns(
     const scheduled = parseTimeOfDay(entry.time);
     if (scheduled === null) continue;
     const elapsed = nowMinutes - scheduled;
-    if (elapsed < 0 || elapsed > DAILY_GRACE_MINUTES) continue;
+    if (elapsed < 0 || elapsed >= DAILY_GRACE_MINUTES) continue;
     due.push({ entry, scheduled });
   }
 
