@@ -2,6 +2,7 @@ import { BrowserWindow, app, ipcMain, screen, shell } from 'electron';
 import { join } from 'node:path';
 
 import { evaluateCheckIns } from '../src/shared/checkins';
+import { applySettingsPatch } from '../src/shared/defaults';
 import { askLocalModel, type ChatMessage } from '../src/shared/llm';
 import type { AppSettings, VoiceSettings } from '../src/shared/types';
 import {
@@ -263,11 +264,9 @@ function startScheduler(): void {
     if (!window || window.isDestroyed()) return;
     const state = loadCheckInState();
     const result = evaluateCheckIns(new Date(), settings.checkIns, state);
-    if (
-      result.state.lastMorningDay !== state.lastMorningDay ||
-      result.state.lastEveningDay !== state.lastEveningDay ||
-      result.state.lastIntervalAt !== state.lastIntervalAt
-    ) {
+    // Compared whole rather than field by field: new check-in slots must not
+    // need a matching line here to have their bookkeeping persisted.
+    if (JSON.stringify(result.state) !== JSON.stringify(state)) {
       saveCheckInState(result.state);
     }
     for (const event of result.events) {
@@ -280,13 +279,7 @@ function registerIpc(): void {
   ipcMain.handle('settings:get', () => settings);
 
   ipcMain.handle('settings:save', (_event, patch: Partial<AppSettings>) => {
-    settings = {
-      ...settings,
-      ...patch,
-      checkIns: { ...settings.checkIns, ...(patch.checkIns ?? {}) },
-      voice: { ...settings.voice, ...(patch.voice ?? {}) },
-      model: { ...settings.model, ...(patch.model ?? {}) },
-    };
+    settings = applySettingsPatch(settings, patch);
     saveSettings(settings);
     applyAlwaysOnTop();
     return settings;

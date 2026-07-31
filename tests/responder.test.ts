@@ -53,6 +53,38 @@ describe('detectIntent', () => {
     expect(detectIntent('I finished the thing and I am proud')).toBe('positive');
   });
 
+  it('hears whether the gym actually happened', () => {
+    for (const text of [
+      'I went to the gym',
+      'just got back from the gym',
+      'hit the gym before work',
+      'I worked out this morning',
+      'went for a run',
+      'did some yoga',
+      'the workout was brutal',
+    ]) {
+      expect(detectIntent(text), text).toBe('exercise_done');
+    }
+
+    for (const text of [
+      'I skipped the gym again',
+      'missed my workout',
+      "didn't make it to the gym",
+      'I have not moved all day',
+      'no gym today',
+      'taking a rest day',
+    ]) {
+      expect(detectIntent(text), text).toBe('exercise_missed');
+    }
+  });
+
+  it('answers the feeling before the habit when a message has both', () => {
+    // "I skipped the gym" plus self-criticism is a self-critical message, and
+    // the gym part is the least important thing in it.
+    expect(detectIntent('I skipped the gym, I am such a failure')).toBe('self_critical');
+    expect(detectIntent('I missed my workout and I am so overwhelmed')).toBe('overwhelmed');
+  });
+
   it('falls back to open listening for anything unmatched', () => {
     expect(detectIntent('the weather turned again')).toBe('unclear');
     expect(detectIntent('')).toBe('unclear');
@@ -132,6 +164,64 @@ describe('respond', () => {
   });
 });
 
+describe('answering a buddy check-in', () => {
+  it('reads a bare yes or no as an answer to the question just asked', () => {
+    const yes = respond('yeah', ctx({ topic: 'gym' }));
+    expect(yes.text.toLowerCase()).toMatch(/did|showed up|pleased/);
+    expect(yes.mood).toBe('happy');
+
+    const no = respond('nope', ctx({ topic: 'gym' }));
+    expect(no.text.toLowerCase()).toMatch(/no judgement|got in the way|rest|alright|one day/);
+    expect(no.mood).toBe('listening');
+  });
+
+  it('does the same for the general day question', () => {
+    expect(respond('yes', ctx({ topic: 'life' })).text).not.toBe(
+      respond('yes', ctx({ topic: 'gym' })).text,
+    );
+    expect(respond('not really', ctx({ topic: 'life' })).text.length).toBeGreaterThan(0);
+  });
+
+  it('takes a "no" without a lecture, a guilt trip, or a body comment', () => {
+    for (const topic of ['gym', 'life'] as const) {
+      for (let turn = 0; turn < 4; turn += 1) {
+        const text = respond('no', ctx({ topic, turn })).text.toLowerCase();
+        expect(text, text).not.toMatch(
+          /should|must|need to|lazy|excuse|discipline|weight|calorie|fat|diet|streak/,
+        );
+      }
+    }
+  });
+
+  it('is only a lens on a short answer, never a filter on a real one', () => {
+    // Something with content of its own is still classified on its own terms.
+    expect(respond('I am really sad today', ctx({ topic: 'life' })).text).toBe(
+      respond('I am really sad today', ctx()).text,
+    );
+  });
+
+  it('never lets a topic get in front of the crisis path', () => {
+    for (const topic of ['gym', 'life'] as const) {
+      const reply = respond('I want to kill myself', ctx({ topic }));
+      expect(reply.safety).toBe(true);
+      expect(reply.text).toContain('988');
+    }
+  });
+
+  it('says nothing clinical or measuring in any exercise reply', () => {
+    const samples = ['I went to the gym', 'I skipped the gym', 'no gym today', 'I worked out'];
+    for (const sample of samples) {
+      for (let turn = 0; turn < 4; turn += 1) {
+        const text = respond(sample, ctx({ turn })).text.toLowerCase();
+        expect(text, sample).not.toMatch(
+          /calorie|weight|bmi|diagnos|prescri|you should|burn|reps you|kg|lbs/,
+        );
+        expect(text.trim().length).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
 describe('openingLine', () => {
   it('produces a filled greeting for every hour', () => {
     for (let hour = 0; hour < 24; hour += 1) {
@@ -172,5 +262,11 @@ describe('systemPrompt', () => {
     expect(prompt).toMatch(/not a therapist/i);
     expect(prompt).toMatch(/never diagnose/i);
     expect(prompt).toContain('988');
+  });
+
+  it('tells an optional model to ask like a friend, not like a tracker', () => {
+    const prompt = systemPrompt(ctx()).toLowerCase();
+    expect(prompt).toMatch(/gym/);
+    expect(prompt).toMatch(/never comment on their weight/);
   });
 });

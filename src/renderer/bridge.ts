@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS } from '../shared/defaults';
+import { DEFAULT_SETTINGS, applySettingsPatch } from '../shared/defaults';
 import type { AppSettings, CheckInEvent, PlacementEvent, VoiceSettings } from '../shared/types';
 
 /**
@@ -49,13 +49,7 @@ function browserFallback(): Bridge {
     platform: 'browser',
     getSettings: async () => settings,
     saveSettings: async (patch) => {
-      settings = {
-        ...settings,
-        ...patch,
-        checkIns: { ...settings.checkIns, ...(patch.checkIns ?? {}) },
-        voice: { ...settings.voice, ...(patch.voice ?? {}) },
-        model: { ...settings.model, ...(patch.model ?? {}) },
-      };
+      settings = applySettingsPatch(settings, patch);
       return settings;
     },
     startDrag: async () => undefined,

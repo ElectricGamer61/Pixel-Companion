@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_SETTINGS, mergeCheckInState, mergeSettings } from '../src/shared/defaults';
+import {
+  DEFAULT_SETTINGS,
+  applySettingsPatch,
+  mergeCheckInState,
+  mergeSettings,
+} from '../src/shared/defaults';
 import { extractReply, askLocalModel } from '../src/shared/llm';
 
 describe('mergeSettings', () => {
@@ -56,9 +61,54 @@ describe('mergeSettings', () => {
     );
   });
 
+  it('has the buddy check-ins on out of the box', () => {
+    expect(DEFAULT_SETTINGS.checkIns.gymEnabled).toBe(true);
+    expect(DEFAULT_SETTINGS.checkIns.lifeEnabled).toBe(true);
+    expect(DEFAULT_SETTINGS.checkIns.gymDays).toBe('12345');
+  });
+
+  it('adds the buddy check-ins to a settings file written before they existed', () => {
+    const old = mergeSettings({ checkIns: { morningTime: '07:30', eveningTime: '22:00' } });
+    expect(old.checkIns.morningTime).toBe('07:30');
+    expect(old.checkIns.gymEnabled).toBe(DEFAULT_SETTINGS.checkIns.gymEnabled);
+    expect(old.checkIns.gymDays).toBe(DEFAULT_SETTINGS.checkIns.gymDays);
+    expect(old.checkIns.lifeTime).toBe(DEFAULT_SETTINGS.checkIns.lifeTime);
+  });
+
+  it('repairs a gym-day selection instead of leaving a dead toggle', () => {
+    // Every day deselected would be a switch that is on and can never fire.
+    expect(mergeSettings({ checkIns: { gymDays: '' } } as never).checkIns.gymDays).toBe('12345');
+    expect(mergeSettings({ checkIns: { gymDays: 'sat' } } as never).checkIns.gymDays).toBe('12345');
+    expect(mergeSettings({ checkIns: { gymDays: '60' } } as never).checkIns.gymDays).toBe('06');
+  });
+
   it('round-trips a saved file', () => {
     const saved = mergeSettings({ userName: 'Ada', scale: 2 });
     expect(mergeSettings(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
+  });
+});
+
+describe('applySettingsPatch', () => {
+  it('merges one level deep, leaving untouched groups alone', () => {
+    const next = applySettingsPatch(DEFAULT_SETTINGS, {
+      checkIns: { ...DEFAULT_SETTINGS.checkIns, gymTime: '07:15' },
+    });
+    expect(next.checkIns.gymTime).toBe('07:15');
+    expect(next.checkIns.morningTime).toBe(DEFAULT_SETTINGS.checkIns.morningTime);
+    expect(next.voice).toEqual(DEFAULT_SETTINGS.voice);
+  });
+
+  it('sanitises what the UI sends, without waiting for a restart', () => {
+    // Clearing every day chip must not leave a live toggle that never fires.
+    const next = applySettingsPatch(DEFAULT_SETTINGS, {
+      checkIns: { ...DEFAULT_SETTINGS.checkIns, gymDays: '', intervalMinutes: 1 },
+    });
+    expect(next.checkIns.gymDays).toBe(DEFAULT_SETTINGS.checkIns.gymDays);
+    expect(next.checkIns.intervalMinutes).toBe(5);
+  });
+
+  it('keeps the optional model off unless the patch turns it on', () => {
+    expect(applySettingsPatch(DEFAULT_SETTINGS, { userName: 'Ada' }).model.enabled).toBe(false);
   });
 });
 
@@ -66,11 +116,19 @@ describe('mergeCheckInState', () => {
   it('tolerates a missing or corrupt state file', () => {
     expect(mergeCheckInState(null).lastMorningDay).toBeNull();
     expect(mergeCheckInState({ lastIntervalAt: 'soon' }).lastIntervalAt).toBeNull();
+    expect(mergeCheckInState({ lastGymDay: 7 }).lastGymDay).toBeNull();
   });
 
   it('keeps valid values', () => {
-    const restored = mergeCheckInState({ lastMorningDay: '2025-05-14', lastIntervalAt: 1000 });
+    const restored = mergeCheckInState({
+      lastMorningDay: '2025-05-14',
+      lastGymDay: '2025-05-14',
+      lastLifeDay: '2025-05-13',
+      lastIntervalAt: 1000,
+    });
     expect(restored.lastMorningDay).toBe('2025-05-14');
+    expect(restored.lastGymDay).toBe('2025-05-14');
+    expect(restored.lastLifeDay).toBe('2025-05-13');
     expect(restored.lastIntervalAt).toBe(1000);
   });
 });

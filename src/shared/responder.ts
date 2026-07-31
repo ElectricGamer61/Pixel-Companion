@@ -1,4 +1,4 @@
-import type { CompanionMood, CompanionReply } from './types';
+import type { CheckInTopic, CompanionMood, CompanionReply } from './types';
 
 /**
  * The offline, rule-based responder.
@@ -24,6 +24,8 @@ export type Intent =
   | 'lonely'
   | 'tired'
   | 'overwhelmed'
+  | 'exercise_done'
+  | 'exercise_missed'
   | 'accountability'
   | 'affirmation'
   | 'unclear';
@@ -35,6 +37,12 @@ export interface ResponderContext {
   turn: number;
   /** Local hour 0-23, used only to pick a time-appropriate greeting. */
   hour?: number;
+  /**
+   * The buddy check-in the companion asked last, if the user is answering it.
+   * Held in memory by the renderer for a single turn — never persisted — so a
+   * bare "yeah" or "nope" gets an answer that knows what the question was.
+   */
+  topic?: CheckInTopic;
 }
 
 /**
@@ -139,6 +147,30 @@ const RULES: { intent: Intent; patterns: RegExp[] }[] = [
       /\b(tired|exhausted|drained|burn(ed|t)? ?out|no energy|worn out|sleepy|can'?t sleep|insomnia)\b/,
     ],
   },
+  // Both exercise rules sit *below* the feeling rules on purpose: "I skipped the
+  // gym and I feel like a failure" is a self-critical message first and a gym
+  // message second, and the companion should answer the part that hurts.
+  {
+    intent: 'exercise_missed',
+    patterns: [
+      /\b(skipped|missed|bailed on|blew off|flaked on)\b[^.!?]{0,24}\b(gym|workout|work ?out|run|ride|swim|training|exercise|yoga|class|session)\b/,
+      /\b(didn'?t|did not|haven'?t|have not|never|no)\b[^.!?]{0,24}\b(gym|work ?out|worked out|exercise[ds]?|training|trained|move|moved|walk|run)\b/,
+      /\bno gym\b/,
+      /\b(rest|lazy|couch) day\b/,
+    ],
+  },
+  {
+    intent: 'exercise_done',
+    patterns: [
+      /\b(went|going|made it|back|home)\b[^.!?]{0,20}\b(the )?gym\b/,
+      /\bhit the gym\b/,
+      /\b(worked out|work ?out|workout|lifted|trained|trained legs|trained today)\b/,
+      /\bwent (for|on) a (run|walk|jog|swim|ride|cycle)\b/,
+      /\bdid (my |some |a )?(yoga|cardio|pilates|stretching|steps|reps|sets)\b/,
+      /\b(gym|workout|training|exercise|run) (was|felt|went)\b/,
+      /\bgot (my |some )?(steps|movement|exercise)\b/,
+    ],
+  },
   {
     intent: 'accountability',
     patterns: [
@@ -198,8 +230,8 @@ const RESPONSES: Record<Exclude<Intent, 'safety'>, { mood: CompanionMood; lines:
   capabilities: {
     mood: 'idle',
     lines: [
-      'You can talk to me any time by clicking me. I listen, I reflect things back, and I can nudge you with check-ins in the morning and evening. I can read my replies aloud if your system supports speech. Everything stays on this machine.',
-      'Mostly I keep you company: type to me, and I will listen and ask a question back. I can also remind you to check in with yourself on a schedule you set in the settings panel.',
+      'You can talk to me any time by clicking me. I listen, I reflect things back, and I check in on you: how the day started, whether you got moving, and whether you did anything that was actually for you. Everything stays on this machine.',
+      'Mostly I keep you company and keep track of you a bit. Type to me and I will listen. I will also ask about your day and your gym plan at the times you pick in Settings, and you can turn any of that off.',
     ],
   },
   positive: {
@@ -266,6 +298,22 @@ const RESPONSES: Record<Exclude<Intent, 'safety'>, { mood: CompanionMood; lines:
       'Running on empty makes every task cost more. What has been eating your energy?',
     ],
   },
+  exercise_done: {
+    mood: 'happy',
+    lines: [
+      'You went. That is the hard part and you did it. How does your body feel now?',
+      'Nice one. Showing up is the whole thing - the rest is detail. What did you get up to?',
+      'Good. I like hearing that. Was it a drag to start, or did it come easy today?',
+    ],
+  },
+  exercise_missed: {
+    mood: 'listening',
+    lines: [
+      'Okay, no drama. A skipped day is a skipped day, not a verdict on you. What got in the way?',
+      'That happens, and I am not going to make it a thing. Do you want to aim at tomorrow, or is your body asking for a rest?',
+      'Fair enough. Rest counts too. Is it that you did not have the time, or did not have it in you?',
+    ],
+  },
   accountability: {
     mood: 'thinking',
     lines: [
@@ -298,6 +346,50 @@ const SAFETY_LINES = [
   'I am really glad you told me, and I want to be honest with you: I am a small offline program and I am not equipped to help with this. Please reach out to a person who can. If you are in the US you can call or text 988 for the Suicide and Crisis Lifeline, and findahelpline.com lists free services in many other countries. If you are in immediate danger, please contact your local emergency number. I am still here with you.',
   'Thank you for saying that out loud. This is bigger than what I can hold as a desktop companion, and you deserve real support. In the US, 988 connects you to the Suicide and Crisis Lifeline by call or text; findahelpline.com has free lines for other countries. If you might act on this soon, please call your local emergency services or reach someone you trust right now.',
 ];
+
+/**
+ * Answers to a buddy check-in that carry no content of their own — "yeah",
+ * "nope", "not today". Stateless rules cannot tell what those mean, so the
+ * renderer passes the question the companion just asked and these fill it in.
+ * Nothing here is stored: the topic lives for one turn, in memory.
+ */
+const TOPIC_ANSWERS: Record<CheckInTopic, Record<'yes' | 'no', string[]>> = {
+  gym: {
+    yes: [
+      'You did? Good. That is a genuinely hard thing to keep doing. What did you work on?',
+      'Yes! I am pleased with you. How did it feel afterwards?',
+      'Love that. You showed up for yourself today. Was it a good one?',
+    ],
+    no: [
+      'Okay. Honestly, thanks for telling me straight. What got in the way today?',
+      'That is alright. One day is one day. Is tomorrow doable, or do you need the rest?',
+      'No judgement here. Was it time, or energy, or just not feeling it?',
+    ],
+  },
+  life: {
+    yes: [
+      'Good. Tell me about it - what did you do?',
+      'That is what I like to hear. What was it?',
+      'Nice. I want the details. What did you get up to?',
+    ],
+    no: [
+      'Okay. Some days are just for getting through, and that is allowed. What did today take out of you?',
+      'That is fair. Not every day has a highlight in it. What would you want tomorrow to have?',
+      'Alright. No pressure to make it into something. How are you doing underneath it?',
+    ],
+  },
+};
+
+const YES_PATTERN = /^\s*(yes|yeah|yep|yup|ye|sure|ok|okay|i did|did|done|indeed|mhm|uh huh)\b/;
+const NO_PATTERN = /^\s*(no|nope|nah|not really|not today|didn'?t|i didn'?t|negative)\b/;
+
+/** Read a bare answer as yes or no, or null when it is neither. */
+function answerPolarity(input: string): 'yes' | 'no' | null {
+  const text = normalize(input);
+  if (NO_PATTERN.test(text)) return 'no';
+  if (YES_PATTERN.test(text)) return 'yes';
+  return null;
+}
 
 const TIME_GREETINGS: { until: number; line: string }[] = [
   { until: 5, line: 'You are up late{name}. How are you doing?' },
@@ -345,6 +437,19 @@ export function respond(input: string, ctx: ResponderContext): CompanionReply {
       safety: true,
       source: 'rules',
     };
+  }
+
+  // A short answer to a check-in only means something next to the question, so
+  // this runs before the generic buckets — but always after the safety check.
+  if (ctx.topic && (intent === 'affirmation' || intent === 'unclear')) {
+    const polarity = answerPolarity(input);
+    if (polarity) {
+      return {
+        text: rotate(TOPIC_ANSWERS[ctx.topic][polarity], ctx.turn),
+        mood: polarity === 'yes' ? 'happy' : 'listening',
+        source: 'rules',
+      };
+    }
   }
 
   if (intent === 'greeting' && typeof ctx.hour === 'number') {
@@ -399,6 +504,8 @@ export function systemPrompt(ctx: ResponderContext): string {
     `You are ${ctx.companionName}, a small pixel-art creature living on ${name}'s desktop.`,
     'You offer emotional support, companionship, and gentle accountability.',
     'You are warm, brief, and concrete. Reply in at most three sentences and usually end with one open question.',
+    'You are the kind of friend who remembers to ask whether they went to the gym and whether they did anything with their day. Ask like a friend, never like a coach or a tracker: a "no" is always an acceptable answer and never earns a lecture.',
+    'Never comment on their weight, diet, or body, and never tell them what their body should be doing.',
     'You are not a therapist, doctor, or counsellor. Never diagnose, never give medical advice, and never claim clinical expertise.',
     'If the user mentions self-harm, suicide, or being in danger, tell them plainly that this is beyond what you can help with, encourage them to contact a crisis line such as 988 in the US or findahelpline.com elsewhere, and stay kind.',
   ].join(' ');
