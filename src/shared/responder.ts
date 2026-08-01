@@ -84,7 +84,7 @@ const NEGATION = "(?:didn'?t|did not|haven'?t|have not|hadn'?t|had not|hasn'?t|n
  * purpose, because "very", "utterly", "kind of" and whatever else someone
  * reaches for all have to work.
  */
-const LOW_MOOD = '(?:low(?! on\\b)|numb|empty|flat|hollow)';
+const LOW_MOOD = '(?:low(?! on\\b)|numb|empty|flat(?! out\\b)|hollow)';
 const LOW_MOOD_SUBJECT =
   "(?:i feel|i felt|i'?m feeling|i'?ve been|i have been|i was|i am|i'?m|feeling|feels|felt|my mood is|my mood has been|everything is|everything feels|it all feels)";
 
@@ -93,15 +93,26 @@ const LOW_MOOD_SUBJECT =
  * all: "work out the budget", "I never worked out what she meant", "it all
  * worked out". Both exercise intents have to stand clear of them.
  */
+/**
+ * A stretch of time, however someone words it: "the whole week", "the last few
+ * days", "the past couple of months". It is what separates "I have not worked
+ * out the last few days" — a lapse — from "I have not worked out the last few
+ * bugs", which is a problem being solved.
+ */
+const TIME_SPAN =
+  '(?:(?:whole|entire|full|last|past|first|next|other|rest of the)\\s+)?(?:few|couple(?: of)?)?\\s*(?:weeks?|months?|years?|days?|weekends?|mornings?|evenings?|nights?|while)\\b';
+
 const WORK_OUT_IDIOM: RegExp[] = [
   // No "this" or "when": they lead a time, not a clause — "worked out this
   // morning" and "worked out when I got home" are both real workouts.
   /\bwork(?:ed|s|ing)? ?out (?:how|what|why|whether|where|if)\b/,
   // "that" and "the" only introduce the figure-out sense when what follows is a
   // thing. "Worked out that much" and "work out the whole week" are quantities
-  // and time windows — someone reporting a lapse, not solving a problem.
+  // and time windows — someone reporting a lapse, not solving a problem. What
+  // decides it after "the" is the head noun, not the quantifier: "the last few
+  // days" is a lapse, "the last few bugs" is a problem being solved.
   /\bwork(?:ed|s|ing)? ?out that\b(?! (?:much|many|often|hard|long|far|regularly))/,
-  /\bwork(?:ed|s|ing)? ?out the\b(?! (?:whole|last|past|first|next|other|entire|rest|full|week|month|year|day|weekend))/,
+  new RegExp(`\\bwork(?:ed|s|ing)? ?out the\\b(?! ${TIME_SPAN})`),
   /\b(?:it|that|this|things|everything|all) (?:all )?work(?:ed|s)? ?out\b/,
   /\bwork(?:ed|s)? ?out (?:well|fine|great|ok|okay|nicely|badly|in the end)\b/,
 ];

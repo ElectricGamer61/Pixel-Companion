@@ -10,6 +10,13 @@ import type { CheckInEvent, CheckInKind, CheckInSettings, CheckInState } from '.
  */
 export const DAILY_GRACE_MINUTES = 180;
 
+/**
+ * The quiet gap between two daily check-ins. Grace windows overlap, so without
+ * it a question displaced by a newer one would arrive on the scheduler's very
+ * next tick, half a minute later.
+ */
+export const DAILY_SPACING_MINUTES = 20;
+
 /** Local-time `YYYY-MM-DD` key, used to fire daily check-ins at most once a day. */
 export function dayKey(date: Date): string {
   const y = date.getFullYear();
@@ -171,16 +178,21 @@ export function evaluateCheckIns(
    * check-ins a day, so opening the app at seven in the evening could otherwise
    * greet the user with a stack of questions — which is a queue being flushed,
    * not a friend saying hello. The most recently scheduled one wins because it
-   * is the one still worth asking, and the ones it displaces are marked done so
-   * they do not arrive thirty seconds later instead.
+   * is the one still worth asking. Only the winner is marked done, so a
+   * check-in the user switched on is never silently swallowed; the ones it
+   * displaces wait out `DAILY_SPACING_MINUTES` and then ask for themselves,
+   * which is a friend coming back to something rather than a queue flushing.
    */
-  if (due.length > 0) {
+  const sinceLastDaily =
+    next.lastDailyAt === null ? Infinity : (now.getTime() - next.lastDailyAt) / 60_000;
+  if (due.length > 0 && sinceLastDaily >= DAILY_SPACING_MINUTES) {
     const winner = due.reduce((best, item) => (item.scheduled > best.scheduled ? item : best));
     events.push({
       kind: winner.entry.kind,
       message: pickPrompt(winner.entry.prompts, now.getDate() + winner.scheduled),
     });
-    for (const item of due) next[item.entry.lastKey] = today;
+    next[winner.entry.lastKey] = today;
+    next.lastDailyAt = now.getTime();
   }
 
   if (settings.intervalEnabled && settings.intervalMinutes > 0) {

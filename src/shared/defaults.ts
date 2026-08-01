@@ -48,6 +48,7 @@ export const DEFAULT_CHECKIN_STATE: CheckInState = {
   lastGymDay: null,
   lastLifeDay: null,
   lastIntervalAt: null,
+  lastDailyAt: null,
 };
 
 /**
@@ -141,5 +142,6 @@ export function mergeCheckInState(stored: unknown): CheckInState {
   if (typeof s.lastGymDay === 'string') base.lastGymDay = s.lastGymDay;
   if (typeof s.lastLifeDay === 'string') base.lastLifeDay = s.lastLifeDay;
   if (typeof s.lastIntervalAt === 'number') base.lastIntervalAt = s.lastIntervalAt;
+  if (typeof s.lastDailyAt === 'number') base.lastDailyAt = s.lastDailyAt;
   return base;
 }

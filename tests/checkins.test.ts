@@ -168,9 +168,11 @@ describe('evaluateCheckIns', () => {
     const result = evaluateCheckIns(at(18, 10, 14), clashing, state());
     expect(result.events).toHaveLength(1);
     expect(result.events[0].kind).toBe('gym');
-    // The displaced question is closed out rather than queued for the next tick.
-    expect(result.state.lastLifeDay).toBe(dayKey(at(18, 10, 14)));
-    expect(evaluateCheckIns(at(18, 11, 14), clashing, result.state).events).toEqual([]);
+    // The displaced question is not silently closed out: it is still on the
+    // books, and asks on a later pass while its own grace window is open.
+    expect(result.state.lastLifeDay).toBeNull();
+    const next = evaluateCheckIns(at(19, 30, 14), clashing, result.state);
+    expect(next.events.map((e) => e.kind)).toEqual(['life']);
   });
 
   it('spaces the shipped daily defaults so none of them is silently swallowed', () => {

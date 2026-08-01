@@ -146,6 +146,34 @@ describe('detectIntent', () => {
     }
   });
 
+  it('reads "flat out" as busy rather than as a low mood', () => {
+    for (const text of ['i am flat out busy', "i'm flat out with work", 'i was flat out all day']) {
+      expect(detectIntent(text), text).not.toBe('sad');
+    }
+    // The plain word still counts, so the guard is the idiom and nothing more.
+    expect(detectIntent('i feel flat')).toBe('sad');
+  });
+
+  it('separates working out a problem from a stretch without exercise', () => {
+    // What follows the quantifier decides it: days are a lapse, bugs are a
+    // problem someone is solving.
+    for (const text of [
+      'i have not worked out the last few bugs',
+      "i haven't worked out the first two errors",
+      'i never worked out the details',
+    ]) {
+      expect(detectIntent(text), text).not.toBe('exercise_missed');
+      expect(detectIntent(text), text).not.toBe('exercise_done');
+    }
+    for (const text of [
+      'i did not work out the whole week',
+      'i have not worked out the last few days',
+      "i haven't worked out the past couple of months",
+    ]) {
+      expect(detectIntent(text), text).toBe('exercise_missed');
+    }
+  });
+
   it('answers the feeling before the habit when a message has both', () => {
     // "I skipped the gym" plus self-criticism is a self-critical message, and
     // the gym part is the least important thing in it.

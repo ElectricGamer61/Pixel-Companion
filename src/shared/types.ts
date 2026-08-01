@@ -114,6 +114,8 @@ export interface CheckInState {
   lastLifeDay: string | null;
   /** Epoch ms of the last interval nudge. */
   lastIntervalAt: number | null;
+  /** Epoch ms of the last daily check-in, so two never land back to back. */
+  lastDailyAt: number | null;
 }
 
 export interface CheckInEvent {

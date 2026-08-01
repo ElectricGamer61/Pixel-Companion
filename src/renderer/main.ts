@@ -711,6 +711,7 @@ function fillSettingsForm(): void {
 
 async function persist(): Promise<void> {
   const minutes = Number(fields.intervalMinutes.value);
+  const gymDays = selectedDays();
   settings = await bridge.saveSettings({
     userName: fields.userName.value.trim(),
     companionName: fields.companionName.value.trim() || 'Pip',
@@ -724,11 +725,13 @@ async function persist(): Promise<void> {
       morningTime: fields.morningTime.value || DEFAULT_SETTINGS.checkIns.morningTime,
       eveningEnabled: fields.eveningEnabled.checked,
       eveningTime: fields.eveningTime.value || DEFAULT_SETTINGS.checkIns.eveningTime,
-      gymEnabled: fields.gymEnabled.checked,
+      // Clearing every day means "stop asking me". Saying so by switching the
+      // toggle off is honest; leaving it on would let mergeSettings repair the
+      // empty selection back to weekdays and repaint the chips the user just
+      // cleared.
+      gymEnabled: fields.gymEnabled.checked && gymDays !== '',
       gymTime: fields.gymTime.value || DEFAULT_SETTINGS.checkIns.gymTime,
-      // An empty selection is repaired to the weekday default by mergeSettings,
-      // so the toggle can never end up on but silently unable to fire.
-      gymDays: selectedDays(),
+      gymDays,
       lifeEnabled: fields.lifeEnabled.checked,
       lifeTime: fields.lifeTime.value || DEFAULT_SETTINGS.checkIns.lifeTime,
       intervalEnabled: fields.intervalEnabled.checked,
