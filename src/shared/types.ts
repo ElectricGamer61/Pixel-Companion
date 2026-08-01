@@ -24,7 +24,14 @@ export type CompanionMood =
   | 'greeting'
   | 'dozing';
 
-export type CheckInKind = 'morning' | 'evening' | 'interval';
+export type CheckInKind = 'morning' | 'evening' | 'interval' | 'gym' | 'life';
+
+/**
+ * The check-ins that are about what the user actually did with their day, as
+ * opposed to how they feel. A reply to one of these is read in that light, so a
+ * bare "yeah" or "nope" gets a buddy's answer instead of a generic one.
+ */
+export type CheckInTopic = 'gym' | 'life';
 
 export interface CheckInSettings {
   /** Master switch. When false no check-in ever fires. */
@@ -34,6 +41,18 @@ export interface CheckInSettings {
   morningTime: string;
   eveningEnabled: boolean;
   eveningTime: string;
+  /** "Did you move today?" — the gym/exercise buddy check-in. */
+  gymEnabled: boolean;
+  gymTime: string;
+  /**
+   * Days the gym check-in may fire, as digits `0`-`6` with Sunday as `0`.
+   * A plain string rather than an array so the forward-compatible settings
+   * merge can type-check and sanitise it like every other field.
+   */
+  gymDays: string;
+  /** "Did you do something with your day?" — the general life check-in. */
+  lifeEnabled: boolean;
+  lifeTime: string;
   intervalEnabled: boolean;
   /** Minutes between nudges. Clamped to a sane floor when applied. */
   intervalMinutes: number;
@@ -91,8 +110,12 @@ export interface CheckInState {
   /** `YYYY-MM-DD` of the last fired morning check-in. */
   lastMorningDay: string | null;
   lastEveningDay: string | null;
+  lastGymDay: string | null;
+  lastLifeDay: string | null;
   /** Epoch ms of the last interval nudge. */
   lastIntervalAt: number | null;
+  /** Epoch ms of the last daily check-in, so two never land back to back. */
+  lastDailyAt: number | null;
 }
 
 export interface CheckInEvent {

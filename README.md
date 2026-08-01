@@ -1,8 +1,9 @@
 # Pixel Companion
 
 A small pixel-art creature that lives in the corner of your desktop. Click it to
-talk, and it will listen, reflect things back, and check in on you in the
-morning and evening.
+talk, and it will listen, reflect things back, and check in on you through the
+day — including whether you got to the gym and whether you did anything with
+your day.
 
 It is a companion for emotional support and gentle accountability — not therapy,
 not medical advice, and not crisis care.
@@ -152,15 +153,16 @@ into the bottom edge so only its head peeks up.
 | Action | What happens |
 | --- | --- |
 | Hover the character | It looks up, grins, and shows a two-word hello |
-| Click the character | Opens the chat and settings panel |
+| Click the character | Opens the conversation |
 | Drag the character | Moves it anywhere; the position is remembered |
 | Right-click the character | Sends it back to the bottom-right corner |
-| Panel header 🏠 button | Same: return to the corner |
-| Settings → Appearance → Return to corner | Same, from the settings tab |
+| Panel header ⚙ button | Opens Settings, and closes it again |
+| Panel header 🏠 button | Return to the corner |
+| Settings → On screen → Put me back in the corner | Same, from Settings |
 | Type and press Enter | The companion replies |
-| `Esc` | Closes the panel |
+| `Esc` | Closes Settings, then the panel |
 | Panel header ⏻ button | Quits the app |
-| Settings → Quit companion | Same, from the settings tab |
+| Settings → Quit companion | Same, from Settings |
 
 The rest of your desktop stays clickable: the window is transparent, and
 click-through is switched off only while the pointer is actually over the
@@ -206,9 +208,9 @@ AI model at all.**
   provider to sign up with.
 - **Optional: your own local model.** If you already run Ollama, llama.cpp, or
   LM Studio, you can point the companion at that endpoint in
-  Settings → *Optional local model*. It is off by default, it stays on your
-  machine, and if it is disabled, unreachable, or returns anything unusable the
-  app silently falls back to the rule-based responder. See
+  Settings, under *Voice, local model, and privacy*. It is off by default, it
+  stays on your machine, and if it is disabled, unreachable, or returns anything
+  unusable the app silently falls back to the rule-based responder. See
   [Optional: use a local model](#optional-use-a-local-model).
 - **The crisis check always runs first**, before any model, so a model can never
   bypass it.
@@ -222,21 +224,39 @@ and that choice — and the hardware to run it — stays entirely yours.
 **Talks back, offline.** The default conversation engine is a rule-based
 responder in [`src/shared/responder.ts`](src/shared/responder.ts). It classifies
 what you wrote — anxious, overwhelmed, low, angry, lonely, tired, self-critical,
-stuck on a task, or just saying hello — and answers with validation plus one open
-question. It rotates through several phrasings so it does not repeat itself. It
-requires no model and no network.
+stuck on a task, you made it to the gym, you didn't, or just saying hello — and
+answers with validation plus one open question. It rotates through several
+phrasings so it does not repeat itself. It requires no model and no network.
+
+Feelings win over habits: "I skipped the gym and I feel like a failure" is
+answered as the self-critical thing it is, not as a missed workout.
 
 **Six pixel states.** Idle (with occasional blinks), listening, thinking, happy,
 sleeping, and talking, each with its own face and bob animation. The character
 dozes off after five minutes alone and wakes when you interact.
 
-**Checks in on you.** Morning and evening prompts at times you choose, plus an
-optional every-N-minutes nudge. A check-in appears as a speech bubble; clicking
-it opens the conversation. The schedule and its bookkeeping live in a JSON file
-on your disk — no notification service, no scheduler daemon.
+**Checks in on you, like a friend would.** Four daily check-ins, each with its
+own switch and time in Settings:
+
+| Check-in | What it asks |
+| --- | --- |
+| Good morning | How you are as the day starts |
+| Did you go to the gym? | Whether you got moving — on the weekdays you pick |
+| How was your day? | Whether you did anything that was actually for you |
+| Wind down at night | How today went |
+
+Plus an optional every-N-minutes hello. A check-in appears as a speech bubble;
+clicking it opens the conversation. The schedule and its bookkeeping live in a
+JSON file on your disk — no notification service, no scheduler daemon.
+
+Answering is easy on purpose. A bare "yeah" or "nope" to the gym or day question
+is understood as an answer to *that* question, and "no" never earns a lecture, a
+streak to break, or a word about your body. Nothing is scored, counted, or kept.
 
 A daily check-in only fires within three hours of its scheduled time, so opening
-the app at midnight never greets you with "good morning".
+the app at midnight never greets you with "good morning". If several are due at
+once — opening the laptop in the evening, say — you get the most recent one and
+only that one, because a friend asks one thing at a time.
 
 **Speaks, where your system can.** See [Voice](#voice) below.
 
@@ -253,8 +273,8 @@ cannot be bypassed by a model's output.
 Both directions use free, built-in facilities only. There is no paid STT or TTS
 dependency anywhere in this project.
 
-**Speech output** (enable in Settings → Voice → *Speak replies aloud*) tries, in
-order:
+**Speech output** (enable in Settings, under *Voice, local model, and privacy* →
+*Read my replies aloud*) tries, in order:
 
 1. The Web Speech API (`speechSynthesis`) using your browser/OS voices.
 2. Your operating system's own speech command, run by the main process:
@@ -283,7 +303,7 @@ Making dictation reliable everywhere needs a bundled offline recogniser — see 
 ## Optional: use a local model
 
 Everything above works with no model. If you already run one locally, point the
-companion at it in Settings → *Optional local model*:
+companion at it in Settings, under *Voice, local model, and privacy*:
 
 | Server | Endpoint |
 | --- | --- |
@@ -305,7 +325,7 @@ on yourself.
 
 - **Local only.** Two small JSON files (`settings.json`, `checkin-state.json`) in
   your OS per-user app-data directory. The exact path is shown in
-  Settings → Privacy.
+  Settings, under *Voice, local model, and privacy*.
   - Linux: `~/.config/Pixel Companion/`
   - macOS: `~/Library/Application Support/Pixel Companion/`
   - Windows: `%APPDATA%\Pixel Companion\`
@@ -452,8 +472,9 @@ Deliberately out of scope for this first MVP, in rough priority order:
    deb, dmg, and NSIS on tag, so nontechnical users never see a terminal.
 3. **Launch at login** — an opt-in toggle using Electron's
    `setLoginItemSettings`.
-4. **Richer accountability** — named goals and streaks, still local-only, with an
-   explicit opt-in before anything is written to disk.
+4. **Richer accountability** — named goals you choose, still local-only, with an
+   explicit opt-in before anything is written to disk. Never streaks, counts, or
+   scores: saying "no" has to stay free.
 5. **More expressions and a second character** — the grid format makes new faces
    cheap, and the palette is a single object to swap for a recolour.
 6. **User-editable response packs** — let people edit the offline responder's

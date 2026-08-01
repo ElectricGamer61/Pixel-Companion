@@ -16,8 +16,16 @@
   --surface-2: #2f2648;
   --text: #f2eefb;
   --text-dim: #b0a6c8;
-  --radius: 12px;
-  --font: ui-monospace, "DejaVu Sans Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --line: rgba(255, 255, 255, 0.1);
+  --radius: 14px;
+  /*
+   * The character is pixel art; the conversation is not. A monospace UI made
+   * the whole panel read as a game HUD, so the text is an ordinary system UI
+   * face and only literal code (the data directory) stays monospace.
+   */
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Ubuntu, Cantarell,
+    "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "DejaVu Sans Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 }
 
 * {
@@ -40,7 +48,8 @@ body {
   background: transparent;
   overflow: hidden;
   font-family: var(--font);
-  font-size: 13px;
+  font-size: 13.5px;
+  line-height: 1.5;
   color: var(--text);
   /* Selecting text across a desktop pet is never what the user meant. */
   user-select: none;
@@ -72,9 +81,11 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border: 2px solid var(--ink);
+  /* A hairline instead of the old 2px ink outline: the panel should look like a
+     quiet window, not a sprite with a black keyline around it. */
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: var(--radius);
-  box-shadow: 0 10px 30px rgba(10, 6, 20, 0.45);
+  box-shadow: 0 12px 34px rgba(10, 6, 20, 0.5);
   overflow: hidden;
   animation: rise 140ms ease-out;
 }
@@ -89,49 +100,21 @@ body {
 .panel__bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: var(--surface-2);
-  border-bottom: 2px solid var(--ink);
+  gap: 2px;
+  padding: 8px 8px 8px 14px;
+  border-bottom: 1px solid var(--line);
 }
 
 .panel__title {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--body);
+  /* The name, and nothing else, on the left; the controls collect on the right. */
+  margin: 0 auto 0 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 0 1 auto;
-}
-
-.panel__tabs {
-  display: flex;
-  gap: 4px;
-  margin-left: auto;
-}
-
-.tab {
-  font: inherit;
-  font-size: 11px;
-  padding: 4px 9px;
-  color: var(--text-dim);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.tab:hover {
-  color: var(--text);
-}
-
-.tab.is-active {
-  color: var(--ink);
-  background: var(--body);
-  border-color: var(--body);
-  font-weight: 700;
 }
 
 .icon-button {
@@ -152,6 +135,11 @@ body {
 .icon-button:hover {
   color: var(--text);
   background: rgba(255, 255, 255, 0.08);
+}
+
+.icon-button.is-active {
+  color: var(--body);
+  background: rgba(121, 220, 192, 0.14);
 }
 
 /* Quit sits next to "close panel" and does something far less reversible, so it
@@ -175,40 +163,41 @@ body {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 10px;
+  padding: 14px 12px 6px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   user-select: text;
 }
 
 .msg {
-  max-width: 88%;
-  padding: 7px 10px;
-  border-radius: 10px;
-  line-height: 1.45;
+  max-width: 86%;
+  padding: 9px 12px;
+  border-radius: 16px;
+  line-height: 1.5;
   word-break: break-word;
   white-space: pre-wrap;
   animation: rise 120ms ease-out;
 }
 
+/* Two speakers, told apart by side and weight rather than by outlines. */
 .msg--them {
   align-self: flex-start;
   background: var(--surface-2);
-  border: 1px solid rgba(121, 220, 192, 0.28);
-  border-bottom-left-radius: 3px;
+  border-bottom-left-radius: 5px;
 }
 
 .msg--you {
   align-self: flex-end;
   color: var(--ink);
   background: var(--body);
-  border-bottom-right-radius: 3px;
+  border-bottom-right-radius: 5px;
 }
 
 .msg--safety {
-  border-color: var(--blush);
   background: #3a2438;
+  border-left: 2px solid var(--blush);
+  border-bottom-left-radius: 16px;
 }
 
 .msg--system {
@@ -216,9 +205,10 @@ body {
   max-width: 100%;
   color: var(--text-dim);
   background: transparent;
-  font-size: 11px;
+  font-size: 11.5px;
+  line-height: 1.45;
   text-align: center;
-  padding: 2px 4px;
+  padding: 0 6px;
 }
 
 .msg a {
@@ -258,26 +248,26 @@ body {
 
 .composer {
   display: flex;
+  align-items: center;
   gap: 6px;
-  padding: 8px 10px 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 12px 6px;
 }
 
 .composer__input {
   flex: 1 1 auto;
   min-width: 0;
   font: inherit;
-  padding: 7px 9px;
+  padding: 10px 13px;
   color: var(--text);
   background: var(--surface-2);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
   user-select: text;
 }
 
 .composer__input:focus {
   outline: none;
-  border-color: var(--body);
+  border-color: rgba(121, 220, 192, 0.6);
 }
 
 .composer__input::placeholder {
@@ -286,12 +276,12 @@ body {
 
 .button {
   font: inherit;
-  font-weight: 700;
-  padding: 7px 12px;
+  font-weight: 600;
+  padding: 9px 15px;
   color: var(--ink);
   background: var(--body);
   border: none;
-  border-radius: 8px;
+  border-radius: 999px;
   cursor: pointer;
 }
 
@@ -302,8 +292,9 @@ body {
 .button--quiet {
   color: var(--text-dim);
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  border: 1px solid var(--line);
   font-weight: 400;
+  padding: 7px 13px;
 }
 
 .button--quiet:hover {
@@ -311,11 +302,15 @@ body {
   background: rgba(255, 255, 255, 0.06);
 }
 
+/* Sized and filled like the input beside it, so it reads as part of the
+   composer rather than a loose glyph floating between two controls. */
 .icon-button--mic {
-  width: 32px;
-  height: auto;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
   color: var(--text-dim);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--surface-2);
+  border-radius: 999px;
   font-size: 11px;
 }
 
@@ -338,11 +333,12 @@ body {
 
 .disclaimer {
   margin: 0;
-  padding: 0 10px 8px;
-  font-size: 10px;
+  padding: 0 14px 9px;
+  font-size: 10.5px;
   line-height: 1.35;
+  text-align: center;
   color: var(--text-dim);
-  opacity: 0.75;
+  opacity: 0.6;
 }
 
 /* ------------------------------------------------------------- settings -- */
@@ -352,63 +348,184 @@ body {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 10px;
+  padding: 12px 14px 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 18px;
 }
 
+/*
+ * Settings are plain stacked sections with one heading each. No boxes inside
+ * boxes: the panel is 380px wide, and a border around every group turned four
+ * short lists into something that looked like a control panel.
+ */
 .group {
   margin: 0;
-  padding: 8px 10px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
+  padding: 0;
+  border: 0;
 }
 
-.group legend {
-  padding: 0 4px;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.group__title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--body);
 }
 
-.field {
+.group__sub {
+  margin: 16px 0 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+/* The optional and environment-dependent settings, folded away by default. */
+.group--fold {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.group--fold > summary {
+  cursor: pointer;
+  margin: 0;
+  list-style: none;
+}
+
+.group--fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.group--fold > summary::before {
+  content: '▸ ';
+  color: var(--text-dim);
+}
+
+.group--fold[open] > summary::before {
+  content: '▾ ';
+}
+
+.field,
+.check {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  font-size: 12px;
+  gap: 9px;
+  margin-top: 8px;
+  font-size: 12.5px;
   color: var(--text-dim);
 }
 
 .field > span:first-of-type {
   flex: 0 0 auto;
-  min-width: 88px;
+  min-width: 76px;
 }
 
-.field--toggle > span:first-of-type {
-  min-width: 0;
+/* A switch and the sentence it turns on, reading left to right. */
+.check {
+  cursor: pointer;
+}
+
+.check > span {
+  flex: 1 1 auto;
+}
+
+.check--lead {
+  margin-top: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+/* Each check-in is one row: what it asks, and when. */
+.slots {
+  margin-top: 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slots.is-off {
+  opacity: 0.4;
+}
+
+.slot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.slot > .check {
+  margin-top: 0;
+  flex: 1 1 150px;
+}
+
+.slot__inline {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.days {
+  display: flex;
+  gap: 3px;
+  flex: 1 1 100%;
+  padding-left: 25px;
+}
+
+.day {
+  font: inherit;
+  font-size: 10.5px;
+  width: 21px;
+  height: 21px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.day:hover:not([disabled]) {
+  color: var(--text);
+}
+
+.day.is-on {
+  color: var(--ink);
+  background: var(--body);
+  border-color: var(--body);
+  font-weight: 600;
 }
 
 .field input[type='text'],
 .field input[type='time'],
-.field input[type='number'],
+.slot input[type='time'],
+.slot input[type='number'],
 .field select {
-  flex: 1 1 auto;
   min-width: 0;
   font: inherit;
-  font-size: 12px;
-  padding: 5px 7px;
+  font-size: 12.5px;
+  padding: 6px 8px;
   color: var(--text);
   background: var(--surface-2);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   user-select: text;
 }
 
-.field input[type='number'] {
-  flex: 0 0 68px;
+.field input[type='text'],
+.field select {
+  flex: 1 1 auto;
+}
+
+.slot input[type='time'] {
+  flex: 0 0 auto;
+}
+
+.slot input[type='number'] {
+  flex: 0 0 58px;
 }
 
 .field input[type='range'] {
@@ -417,30 +534,40 @@ body {
   accent-color: var(--body);
 }
 
-.field input[type='checkbox'] {
+input[type='checkbox'] {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
   accent-color: var(--body);
   cursor: pointer;
 }
 
-.field input:focus,
-.field select:focus {
-  outline: none;
-  border-color: var(--body);
+input:focus-visible,
+select:focus-visible,
+.day:focus-visible {
+  outline: 2px solid var(--body-dim);
+  outline-offset: 1px;
+}
+
+[disabled] {
+  cursor: not-allowed;
 }
 
 .unit {
-  font-size: 11px;
+  font-size: 11.5px;
 }
 
 .hint {
-  margin: 8px 0 0;
-  font-size: 10.5px;
-  line-height: 1.45;
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
   color: var(--text-dim);
+  opacity: 0.85;
 }
 
 .hint code {
-  font-size: 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
   word-break: break-all;
   color: var(--body-dim);
 }
@@ -448,6 +575,7 @@ body {
 .settings__actions {
   display: flex;
   justify-content: flex-end;
+  margin-top: 10px;
 }
 
 /* --------------------------------------------------------------- bubble -- */

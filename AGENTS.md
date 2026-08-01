@@ -80,6 +80,10 @@ These are promises made to users in `README.md`, not preferences:
   is what the user sees.
 - **Quitting must stay reachable from the panel header.** The window is frameless and
   `skipTaskbar`, so the OS offers no way out; `#panel-quit` is it.
+- **The panel is a conversation with a settings drawer, not a two-tab app.** `#panel-settings`
+  swaps `#chat-view` for `#settings-view`; `Esc` backs out of settings first and only then
+  closes the panel. Settings is plain stacked sections at 380px wide — no nested boxes, and
+  anything optional or environment-dependent belongs in the `<details>` fold at the bottom.
 - **Click-through is hit-tested per pointer move.** The window covers a rectangle of
   desktop and is `setIgnoreMouseEvents(true, { forward: true })` by default; the renderer
   flips it only while the pointer is over a `[data-interactive]` element. New interactive
@@ -87,6 +91,25 @@ These are promises made to users in `README.md`, not preferences:
 - **Daily check-ins have a grace window** (`DAILY_GRACE_MINUTES` in
   `src/shared/checkins.ts`), so a check-in never fires long after its time. `evaluateCheckIns`
   takes the clock as an argument — keep it pure so it stays testable without timers.
+  Adding a slot means one entry in its `daily` table plus a `last*Day` key; nothing
+  else in the app enumerates the kinds. Because grace windows overlap once there are
+  four slots a day, `evaluateCheckIns` fires only the **latest-scheduled** due one and
+  marks the rest done for today: several questions arriving at once reads as a queue
+  being flushed, not a friend. Tests in `tests/checkins.test.ts` pin that.
+- **The companion's care is a product promise, not decoration.** The gym and day
+  check-ins must stay answerable with "no" at zero cost: no streaks, no counts, no
+  body/weight/diet commentary, and nothing scored — in the offline lines *and* in the
+  `systemPrompt` that constrains an optional model. `tests/responder.test.ts` asserts it.
+  The feeling rules deliberately sit above the exercise rules in `RULES`, so a message
+  that is both is answered as the feeling.
+- **`ResponderContext.topic` is memory-only, and must stay that way.** It is how a bare
+  "yeah"/"nope" is read as an answer to the check-in just asked; the renderer holds it
+  for exactly one turn (`openTopic` in `src/renderer/main.ts`). Persisting it would be
+  storing conversation, which the constraints above forbid.
+- **All settings writes go through `applySettingsPatch`** (`src/shared/defaults.ts`), in
+  both the main process and the browser-preview bridge, so a value the UI can produce but
+  the app cannot use — an empty gym-day selection, say — is repaired at save time rather
+  than only after a restart.
 - **On Linux, Electron usually reports zero speech-synthesis voices**, which is why
   `electron/speech.ts` shells out to `spd-say`/`espeak-ng`. Speech recognition is often
   absent too; typing must always remain a complete input path.

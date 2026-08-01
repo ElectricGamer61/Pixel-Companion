@@ -1,3 +1,4 @@
+import { normalizeDays } from './checkins';
 import type { AppSettings, CheckInState } from './types';
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -9,6 +10,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
     morningTime: '09:00',
     eveningEnabled: true,
     eveningTime: '21:00',
+    // The buddy check-ins are on out of the box: they are the point of the
+    // companion, and a check-in the user never discovers cannot care about them.
+    gymEnabled: true,
+    gymTime: '18:00',
+    gymDays: '12345',
+    lifeEnabled: true,
+    // A whole DAILY_GRACE_MINUTES clear of the gym slot, so the two windows
+    // cannot overlap: only the latest due check-in fires, and an overlap would
+    // mean the earlier question was routinely marked done without being asked.
+    lifeTime: '15:00',
     intervalEnabled: false,
     intervalMinutes: 120,
   },
@@ -34,7 +45,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
 export const DEFAULT_CHECKIN_STATE: CheckInState = {
   lastMorningDay: null,
   lastEveningDay: null,
+  lastGymDay: null,
+  lastLifeDay: null,
   lastIntervalAt: null,
+  lastDailyAt: null,
 };
 
 /**
@@ -76,11 +90,38 @@ export function mergeSettings(stored: unknown): AppSettings {
     24 * 60,
     Math.max(5, Math.round(base.checkIns.intervalMinutes)),
   );
+  // A gym check-in that is on but has no days left would be silently dead,
+  // which reads as a broken toggle rather than a choice; fall back to the
+  // weekday default. Switched off, an empty selection is exactly what the user
+  // said, so it stands and the day picker keeps showing what they cleared.
+  base.checkIns.gymDays = normalizeDays(base.checkIns.gymDays);
+  if (base.checkIns.gymEnabled && base.checkIns.gymDays === '') {
+    base.checkIns.gymDays = DEFAULT_SETTINGS.checkIns.gymDays;
+  }
   base.voice.rate = Math.min(2, Math.max(0.5, base.voice.rate));
   base.voice.volume = Math.min(1, Math.max(0, base.voice.volume));
   base.model.timeoutMs = Math.min(120000, Math.max(1000, Math.round(base.model.timeoutMs)));
 
   return base;
+}
+
+/**
+ * Apply a settings patch from the UI, one level deep for the nested groups, and
+ * sanitise the result the same way a file read from disk is sanitised.
+ *
+ * Both the main process and the browser-preview stub go through here, so a
+ * value the UI can produce but the app cannot use — an empty gym-day selection,
+ * an out-of-range interval — is repaired immediately rather than only after a
+ * restart.
+ */
+export function applySettingsPatch(current: AppSettings, patch: Partial<AppSettings>): AppSettings {
+  return mergeSettings({
+    ...current,
+    ...patch,
+    checkIns: { ...current.checkIns, ...(patch.checkIns ?? {}) },
+    voice: { ...current.voice, ...(patch.voice ?? {}) },
+    model: { ...current.model, ...(patch.model ?? {}) },
+  });
 }
 
 /** Copy only the keys that exist on `target` and whose types match. */
@@ -102,6 +143,9 @@ export function mergeCheckInState(stored: unknown): CheckInState {
   const s = stored as Partial<CheckInState>;
   if (typeof s.lastMorningDay === 'string') base.lastMorningDay = s.lastMorningDay;
   if (typeof s.lastEveningDay === 'string') base.lastEveningDay = s.lastEveningDay;
+  if (typeof s.lastGymDay === 'string') base.lastGymDay = s.lastGymDay;
+  if (typeof s.lastLifeDay === 'string') base.lastLifeDay = s.lastLifeDay;
   if (typeof s.lastIntervalAt === 'number') base.lastIntervalAt = s.lastIntervalAt;
+  if (typeof s.lastDailyAt === 'number') base.lastDailyAt = s.lastDailyAt;
   return base;
 }

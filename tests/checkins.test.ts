@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { dayKey, evaluateCheckIns, parseTimeOfDay } from '../src/shared/checkins';
+import {
+  DAILY_GRACE_MINUTES,
+  DAY_LABELS,
+  dayAllowed,
+  dayKey,
+  evaluateCheckIns,
+  normalizeDays,
+  parseTimeOfDay,
+} from '../src/shared/checkins';
 import { DEFAULT_CHECKIN_STATE, DEFAULT_SETTINGS } from '../src/shared/defaults';
 import type { CheckInSettings, CheckInState } from '../src/shared/types';
 
@@ -29,6 +37,26 @@ describe('parseTimeOfDay', () => {
     for (const bad of ['', '9', '9:0', '24:00', '12:60', 'noon', '09:00:00']) {
       expect(parseTimeOfDay(bad), bad).toBeNull();
     }
+  });
+});
+
+describe('gym days', () => {
+  it('stores a selection in one canonical shape', () => {
+    expect(normalizeDays('531')).toBe('135');
+    expect(normalizeDays('1122')).toBe('12');
+    expect(normalizeDays('')).toBe('');
+  });
+
+  it('drops anything that is not a weekday index', () => {
+    expect(normalizeDays('0x9-6')).toBe('06');
+    expect(normalizeDays('nope')).toBe('');
+  });
+
+  it('reads the same weekday numbering as Date.getDay', () => {
+    expect(DAY_LABELS).toHaveLength(7);
+    expect(DAY_LABELS[new Date(2025, 4, 18).getDay()]).toBe('Sun');
+    expect(dayAllowed('12345', new Date(2025, 4, 14))).toBe(true);
+    expect(dayAllowed('12345', new Date(2025, 4, 18))).toBe(false);
   });
 });
 
@@ -109,6 +137,98 @@ describe('evaluateCheckIns', () => {
     expect(evaluateCheckIns(at(9, 5), settings({ morningTime: 'oops' }), state()).events).toEqual(
       [],
     );
+  });
+
+  // The buddy check-ins: the ones that ask what you did, not how you feel.
+  it('asks about the gym at its own time, on its own days', () => {
+    // 2025-05-14 is a Wednesday, which the default weekday selection includes.
+    const onDay = evaluateCheckIns(at(18, 10, 14), settings(), state());
+    expect(onDay.events.map((e) => e.kind)).toEqual(['gym']);
+    expect(onDay.state.lastGymDay).toBe(dayKey(at(18, 10, 14)));
+  });
+
+  it('stays quiet about the gym on a day the user did not pick', () => {
+    // 2025-05-17 is a Saturday; the default selection is Monday to Friday.
+    expect(new Date(2025, 4, 17).getDay()).toBe(6);
+    const saturday = evaluateCheckIns(at(18, 10, 17), settings(), state());
+    expect(saturday.events.map((e) => e.kind)).not.toContain('gym');
+    expect(saturday.state.lastGymDay).toBeNull();
+    // The same clock time on a selected day does ask, so the silence above is
+    // the day filter rather than a broken schedule.
+    expect(
+      evaluateCheckIns(at(18, 10, 16), settings(), state()).events.map((e) => e.kind),
+    ).toEqual(['gym']);
+  });
+
+  it('asks one thing at a time when several check-ins are due at once', () => {
+    // Deliberately overlapping times: at 18:10 both the day question (17:00) and
+    // the gym question (18:00) are inside their grace windows. A friend asks the
+    // newer one, not both.
+    const clashing = settings({ lifeTime: '17:00' });
+    const result = evaluateCheckIns(at(18, 10, 14), clashing, state());
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0].kind).toBe('gym');
+    // The displaced question is not silently closed out: it is still on the
+    // books, and asks on a later pass while its own grace window is open.
+    expect(result.state.lastLifeDay).toBeNull();
+    const next = evaluateCheckIns(at(19, 30, 14), clashing, result.state);
+    expect(next.events.map((e) => e.kind)).toEqual(['life']);
+  });
+
+  it('is not silenced forever by a timestamp from the future', () => {
+    // A clock moved back, or a state file carried from another machine, must
+    // not leave the companion mute until wall-clock time catches up.
+    const tomorrow = at(15, 5, 15).getTime();
+    const result = evaluateCheckIns(at(15, 5), settings(), state({ lastDailyAt: tomorrow }));
+    expect(result.events.map((e) => e.kind)).toEqual(['life']);
+    expect(result.state.lastDailyAt).toBe(at(15, 5).getTime());
+  });
+
+  it('spaces the shipped daily defaults so none of them is silently swallowed', () => {
+    // Because only the latest due check-in fires and the rest are marked done,
+    // two default slots inside one grace window would mean the earlier question
+    // was routinely closed out without ever being asked.
+    const { morningTime, gymTime, lifeTime, eveningTime } = DEFAULT_SETTINGS.checkIns;
+    const starts = [morningTime, gymTime, lifeTime, eveningTime]
+      .map((time) => parseTimeOfDay(time) as number)
+      .sort((a, b) => a - b);
+    for (let i = 1; i < starts.length; i += 1) {
+      expect(starts[i] - starts[i - 1], `${starts[i - 1]} vs ${starts[i]}`).toBeGreaterThanOrEqual(
+        DAILY_GRACE_MINUTES,
+      );
+    }
+  });
+
+  it('asks what you did with your day', () => {
+    const result = evaluateCheckIns(at(15, 5), settings(), state());
+    expect(result.events.map((e) => e.kind)).toEqual(['life']);
+    expect(result.state.lastLifeDay).toBe(dayKey(at(15, 5)));
+  });
+
+  it('asks each buddy question at most once a day', () => {
+    const first = evaluateCheckIns(at(15, 5), settings(), state());
+    expect(evaluateCheckIns(at(16, 40), settings(), first.state).events).toEqual([]);
+    const gym = evaluateCheckIns(at(18, 5), settings(), first.state);
+    expect(gym.events.map((e) => e.kind)).toEqual(['gym']);
+    expect(evaluateCheckIns(at(18, 40), settings(), gym.state).events).toEqual([]);
+  });
+
+  it('lets the buddy check-ins be turned off one at a time', () => {
+    const noGym = evaluateCheckIns(at(18, 10), settings({ gymEnabled: false }), state());
+    expect(noGym.events.map((e) => e.kind)).not.toContain('gym');
+    expect(evaluateCheckIns(at(15, 5), settings({ lifeEnabled: false }), state()).events).toEqual(
+      [],
+    );
+    // The master switch still covers both of them.
+    expect(evaluateCheckIns(at(18, 10), settings({ enabled: false }), state()).events).toEqual([]);
+  });
+
+  it('never nags: a gym question left unanswered does not repeat next day at random', () => {
+    const asked = evaluateCheckIns(at(18, 10, 14), settings(), state());
+    // Thursday the 15th is also selected, so it asks again once - and only once.
+    const nextDay = evaluateCheckIns(at(18, 10, 15), settings(), asked.state);
+    expect(nextDay.events.map((e) => e.kind)).toEqual(['gym']);
+    expect(evaluateCheckIns(at(19, 0, 15), settings(), nextDay.state).events).toEqual([]);
   });
 
   it('always produces a non-empty prompt', () => {

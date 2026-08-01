@@ -1,4 +1,4 @@
-import type { CompanionMood, CompanionReply } from './types';
+import type { CheckInTopic, CompanionMood, CompanionReply } from './types';
 
 /**
  * The offline, rule-based responder.
@@ -24,6 +24,8 @@ export type Intent =
   | 'lonely'
   | 'tired'
   | 'overwhelmed'
+  | 'exercise_done'
+  | 'exercise_missed'
   | 'accountability'
   | 'affirmation'
   | 'unclear';
@@ -35,6 +37,12 @@ export interface ResponderContext {
   turn: number;
   /** Local hour 0-23, used only to pick a time-appropriate greeting. */
   hour?: number;
+  /**
+   * The buddy check-in the companion asked last, if the user is answering it.
+   * Held in memory by the renderer for a single turn — never persisted — so a
+   * bare "yeah" or "nope" gets an answer that knows what the question was.
+   */
+  topic?: CheckInTopic;
 }
 
 /**
@@ -53,8 +61,96 @@ const SAFETY_PATTERNS: RegExp[] = [
   /\bcut(ting)?\s+my\s?self\b/,
 ];
 
-/** Ordered: the first matching rule wins, so more specific intents come first. */
-const RULES: { intent: Intent; patterns: RegExp[] }[] = [
+/**
+ * Exercise vocabulary, split by how much a word can be trusted on its own.
+ *
+ * `EXERCISE_NOUN` words can only really mean exercise. `ACTIVITY_NOUN` words —
+ * run, walk, ride, class — are ordinary English verbs as often as they are
+ * workouts, so they only count when a determiner makes them a noun. That split
+ * is what keeps "I didn't get the build to run" out of the exercise intents.
+ */
+const EXERCISE_NOUN =
+  '(?:gym|work(?:ed|s)? ?out|training|exercise|yoga|pilates|cardio|crossfit|weights|spin class)';
+const ACTIVITY_NOUN =
+  "(?:(?:a|an|my|the|our|another|today'?s) (?:run|jog|walk|swim|ride|cycle|lift|class|session))";
+const ANY_EXERCISE = `(?:${EXERCISE_NOUN}|${ACTIVITY_NOUN})`;
+const SKIPPED = '(?:skip|skips|skipped|skipping|missed|missing|bailed on|blew off|flaked on)';
+const NEGATION = "(?:didn'?t|did not|haven'?t|have not|hadn'?t|had not|hasn'?t|never|not|no)";
+
+/**
+ * Low-mood words that double as ordinary descriptions of a thing: an empty gym,
+ * a numb hand, a low battery. What makes one of them a feeling is the subject —
+ * the person, or their whole world. The span between subject and word is open on
+ * purpose, because "very", "utterly", "kind of" and whatever else someone
+ * reaches for all have to work.
+ */
+const LOW_MOOD = '(?:low(?! on\\b)|numb|empty|flat(?! out\\b)|hollow)';
+const LOW_MOOD_SUBJECT =
+  "(?:i feel|i felt|i'?m feeling|i'?ve been|i have been|i was|i am|i'?m|feeling|feels|felt|my mood is|my mood has been|everything is|everything feels|it all feels)";
+
+/**
+ * "Work out" in its figure-out and turn-out senses, which are not exercise at
+ * all: "work out the budget", "I never worked out what she meant", "it all
+ * worked out". Both exercise intents have to stand clear of them.
+ */
+/**
+ * A stretch of time, however someone words it: "the whole week", "the last few
+ * days", "the past couple of months". It is what separates "I have not worked
+ * out the last few days" — a lapse — from "I have not worked out the last few
+ * bugs", which is a problem being solved.
+ */
+const TIME_SPAN =
+  '(?:(?:whole|entire|full|last|past|first|next|other|rest of the)\\s+)?(?:few|couple(?: of)?)?\\s*(?:weeks?|months?|years?|days?|weekends?|mornings?|evenings?|nights?|while)\\b';
+
+const WORK_OUT_IDIOM: RegExp[] = [
+  // No "this" or "when": they lead a time, not a clause — "worked out this
+  // morning" and "worked out when I got home" are both real workouts.
+  /\bwork(?:ed|s|ing)? ?out (?:how|what|why|whether|where|if)\b/,
+  // "that" and "the" only introduce the figure-out sense when what follows is a
+  // thing. "Worked out that much" and "work out the whole week" are quantities
+  // and time windows — someone reporting a lapse, not solving a problem. What
+  // decides it after "the" is the head noun, not the quantifier: "the last few
+  // days" is a lapse, "the last few bugs" is a problem being solved.
+  /\bwork(?:ed|s|ing)? ?out that\b(?! (?:much|many|often|hard|long|far|regularly))/,
+  new RegExp(`\\bwork(?:ed|s|ing)? ?out the\\b(?! ${TIME_SPAN})`),
+  /\b(?:it|that|this|things|everything|all) (?:all )?work(?:ed|s)? ?out\b/,
+  /\bwork(?:ed|s)? ?out (?:well|fine|great|ok|okay|nicely|badly|in the end)\b/,
+];
+
+/**
+ * Contexts in which a workout phrase is not a report of a workout: a denial or
+ * a plan for later. `exercise_done` is a claim about something that already
+ * happened, so any of these alongside it disqualifies it.
+ */
+const NOT_A_FINISHED_WORKOUT: RegExp[] = [
+  new RegExp(`\\b${NEGATION}\\b`),
+  /\b(?:going to|gonna|about to|planning to|plan to|planning on|heading to|headed to|off to|need to|needs to|want to|have to|has to|got to|gotta|should|i'?ll|we'?ll|will)\b/,
+  ...WORK_OUT_IDIOM,
+];
+
+/**
+ * Where one clause ends and the next begins. A veto like "not" belongs to the
+ * clause it sits in — "I went to the gym but it was not easy" is still a
+ * workout — so a vetoed rule is matched one clause at a time.
+ */
+const CLAUSE_BOUNDARY =
+  /[,;.!?]+|\b(?:but|and|so|then|though|although|because|while|yet|however)\b/;
+
+function clausesOf(text: string): string[] {
+  const parts = text
+    .split(CLAUSE_BOUNDARY)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : [text];
+}
+
+/**
+ * Ordered: the first matching rule wins, so more specific intents come first.
+ * A rule with `unless` is matched clause by clause and skipped for any clause
+ * one of those patterns vetoes, which is how an intent can require a context
+ * rather than just a phrase.
+ */
+const RULES: { intent: Intent; patterns: RegExp[]; unless?: RegExp[] }[] = [
   {
     intent: 'gratitude',
     patterns: [/\bthank(s| you)\b/, /\bappreciate (it|you|that)\b/, /\bthat helped\b/],
@@ -114,7 +210,8 @@ const RULES: { intent: Intent; patterns: RegExp[] }[] = [
   {
     intent: 'sad',
     patterns: [
-      /\b(sad|down|depressed|low|miserable|unhappy|crying|cried|heartbroken|hopeless|numb|empty)\b/,
+      /\b(sad|down|depressed|miserable|unhappy|crying|cried|heartbroken|hopeless)\b/,
+      new RegExp(`\\b${LOW_MOOD_SUBJECT} (?:\\w+ ){0,2}${LOW_MOOD}\\b`),
       /\bfeel(ing)? (bad|awful|terrible|rough|like crap|like shit)\b/,
       /\b(rough|bad|terrible|awful) (day|week|morning|night)\b/,
     ],
@@ -138,6 +235,36 @@ const RULES: { intent: Intent; patterns: RegExp[] }[] = [
     patterns: [
       /\b(tired|exhausted|drained|burn(ed|t)? ?out|no energy|worn out|sleepy|can'?t sleep|insomnia)\b/,
     ],
+  },
+  // Both exercise rules sit *below* the feeling rules on purpose: "I skipped the
+  // gym and I feel like a failure" is a self-critical message first and a gym
+  // message second, and the companion should answer the part that hurts.
+  {
+    intent: 'exercise_missed',
+    patterns: [
+      new RegExp(`\\b${SKIPPED}\\b[^.!?]{0,24}\\b${ANY_EXERCISE}\\b`),
+      new RegExp(`\\b${NEGATION}\\b[^.!?]{0,24}\\b${EXERCISE_NOUN}\\b`),
+      // "Moved" only counts next to a span of time; otherwise "I never move fast
+      // enough at work" reads as a skipped workout.
+      new RegExp(
+        `\\b${NEGATION}\\b[^.!?]{0,16}\\bmoved?\\b[^.!?]{0,12}\\b(?:all day|today|at all|yet|since)\\b`,
+      ),
+      /\brest day\b/,
+    ],
+    unless: WORK_OUT_IDIOM,
+  },
+  {
+    intent: 'exercise_done',
+    patterns: [
+      /\b(?:went|got back|came back|been)\b[^.!?]{0,20}\bthe gym\b/,
+      /\bhit the gym\b/,
+      /\b(?:worked out|workout|lifted|trained)\b/,
+      /\bwent (?:for|on) (?:a|my|the|another) (?:run|jog|walk|swim|ride|cycle|hike)\b/,
+      /\bdid (?:my |some |an? |the )?(?:yoga|cardio|pilates|stretching|steps|reps|sets|weights|workout|exercise)\b/,
+      new RegExp(`\\b${EXERCISE_NOUN} (?:was|felt|went)\\b`),
+      /\bgot (?:my |some )?(?:steps|movement|exercise)\b/,
+    ],
+    unless: NOT_A_FINISHED_WORKOUT,
   },
   {
     intent: 'accountability',
@@ -198,8 +325,8 @@ const RESPONSES: Record<Exclude<Intent, 'safety'>, { mood: CompanionMood; lines:
   capabilities: {
     mood: 'idle',
     lines: [
-      'You can talk to me any time by clicking me. I listen, I reflect things back, and I can nudge you with check-ins in the morning and evening. I can read my replies aloud if your system supports speech. Everything stays on this machine.',
-      'Mostly I keep you company: type to me, and I will listen and ask a question back. I can also remind you to check in with yourself on a schedule you set in the settings panel.',
+      'You can talk to me any time by clicking me. I listen, I reflect things back, and I check in on you: how the day started, whether you got moving, and whether you did anything that was actually for you. Everything stays on this machine.',
+      'Mostly I keep you company and keep track of you a bit. Type to me and I will listen. I will also ask about your day and your gym plan at the times you pick in Settings, and you can turn any of that off.',
     ],
   },
   positive: {
@@ -266,6 +393,22 @@ const RESPONSES: Record<Exclude<Intent, 'safety'>, { mood: CompanionMood; lines:
       'Running on empty makes every task cost more. What has been eating your energy?',
     ],
   },
+  exercise_done: {
+    mood: 'happy',
+    lines: [
+      'You went. That is the hard part and you did it. How does your body feel now?',
+      'Nice one. Showing up is the whole thing - the rest is detail. What did you get up to?',
+      'Good. I like hearing that. Was it a drag to start, or did it come easy today?',
+    ],
+  },
+  exercise_missed: {
+    mood: 'listening',
+    lines: [
+      'Okay, no drama. A skipped day is a skipped day, not a verdict on you. What got in the way?',
+      'That happens, and I am not going to make it a thing. Do you want to aim at tomorrow, or is your body asking for a rest?',
+      'Fair enough. Rest counts too. Is it that you did not have the time, or did not have it in you?',
+    ],
+  },
   accountability: {
     mood: 'thinking',
     lines: [
@@ -299,6 +442,50 @@ const SAFETY_LINES = [
   'Thank you for saying that out loud. This is bigger than what I can hold as a desktop companion, and you deserve real support. In the US, 988 connects you to the Suicide and Crisis Lifeline by call or text; findahelpline.com has free lines for other countries. If you might act on this soon, please call your local emergency services or reach someone you trust right now.',
 ];
 
+/**
+ * Answers to a buddy check-in that carry no content of their own — "yeah",
+ * "nope", "not today". Stateless rules cannot tell what those mean, so the
+ * renderer passes the question the companion just asked and these fill it in.
+ * Nothing here is stored: the topic lives for one turn, in memory.
+ */
+const TOPIC_ANSWERS: Record<CheckInTopic, Record<'yes' | 'no', string[]>> = {
+  gym: {
+    yes: [
+      'You did? Good. That is a genuinely hard thing to keep doing. What did you work on?',
+      'Yes! I am pleased with you. How did it feel afterwards?',
+      'Love that. You showed up for yourself today. Was it a good one?',
+    ],
+    no: [
+      'Okay. Honestly, thanks for telling me straight. What got in the way today?',
+      'That is alright. One day is one day. Is tomorrow doable, or do you need the rest?',
+      'No judgement here. Was it time, or energy, or just not feeling it?',
+    ],
+  },
+  life: {
+    yes: [
+      'Good. Tell me about it - what did you do?',
+      'That is what I like to hear. What was it?',
+      'Nice. I want the details. What did you get up to?',
+    ],
+    no: [
+      'Okay. Some days are just for getting through, and that is allowed. What did today take out of you?',
+      'That is fair. Not every day has a highlight in it. What would you want tomorrow to have?',
+      'Alright. No pressure to make it into something. How are you doing underneath it?',
+    ],
+  },
+};
+
+const YES_PATTERN = /^\s*(yes|yeah|yep|yup|ye|sure|ok|okay|i did|did|done|indeed|mhm|uh huh)\b/;
+const NO_PATTERN = /^\s*(no|nope|nah|not really|not today|didn'?t|i didn'?t|negative)\b/;
+
+/** Read a bare answer as yes or no, or null when it is neither. */
+function answerPolarity(input: string): 'yes' | 'no' | null {
+  const text = normalize(input);
+  if (NO_PATTERN.test(text)) return 'no';
+  if (YES_PATTERN.test(text)) return 'yes';
+  return null;
+}
+
 const TIME_GREETINGS: { until: number; line: string }[] = [
   { until: 5, line: 'You are up late{name}. How are you doing?' },
   { until: 12, line: 'Good morning{name}. How are you starting the day?' },
@@ -319,8 +506,17 @@ export function detectIntent(input: string): Intent {
   const text = normalize(input);
   if (!text) return 'unclear';
   if (SAFETY_PATTERNS.some((pattern) => pattern.test(text))) return 'safety';
+  const clauses = clausesOf(text);
   for (const rule of RULES) {
-    if (rule.patterns.some((pattern) => pattern.test(text))) return rule.intent;
+    if (!rule.unless) {
+      if (rule.patterns.some((pattern) => pattern.test(text))) return rule.intent;
+      continue;
+    }
+    for (const clause of clauses) {
+      if (!rule.patterns.some((pattern) => pattern.test(clause))) continue;
+      if (rule.unless.some((pattern) => pattern.test(clause))) continue;
+      return rule.intent;
+    }
   }
   return 'unclear';
 }
@@ -345,6 +541,19 @@ export function respond(input: string, ctx: ResponderContext): CompanionReply {
       safety: true,
       source: 'rules',
     };
+  }
+
+  // A short answer to a check-in only means something next to the question, so
+  // this runs before the generic buckets — but always after the safety check.
+  if (ctx.topic && (intent === 'affirmation' || intent === 'unclear')) {
+    const polarity = answerPolarity(input);
+    if (polarity) {
+      return {
+        text: rotate(TOPIC_ANSWERS[ctx.topic][polarity], ctx.turn),
+        mood: polarity === 'yes' ? 'happy' : 'listening',
+        source: 'rules',
+      };
+    }
   }
 
   if (intent === 'greeting' && typeof ctx.hour === 'number') {
@@ -399,6 +608,8 @@ export function systemPrompt(ctx: ResponderContext): string {
     `You are ${ctx.companionName}, a small pixel-art creature living on ${name}'s desktop.`,
     'You offer emotional support, companionship, and gentle accountability.',
     'You are warm, brief, and concrete. Reply in at most three sentences and usually end with one open question.',
+    'You are the kind of friend who remembers to ask whether they went to the gym and whether they did anything with their day. Ask like a friend, never like a coach or a tracker: a "no" is always an acceptable answer and never earns a lecture.',
+    'Never comment on their weight, diet, or body, and never tell them what their body should be doing.',
     'You are not a therapist, doctor, or counsellor. Never diagnose, never give medical advice, and never claim clinical expertise.',
     'If the user mentions self-harm, suicide, or being in danger, tell them plainly that this is beyond what you can help with, encourage them to contact a crisis line such as 988 in the US or findahelpline.com elsewhere, and stay kind.',
   ].join(' ');

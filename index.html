@@ -20,14 +20,26 @@
       <section id="panel" class="panel" data-interactive hidden aria-label="Companion panel">
         <header class="panel__bar">
           <h1 class="panel__title" id="panel-title">Pip</h1>
-          <nav class="panel__tabs">
-            <button type="button" id="tab-chat" class="tab is-active" aria-pressed="true">
-              Chat
-            </button>
-            <button type="button" id="tab-settings" class="tab" aria-pressed="false">
-              Settings
-            </button>
-          </nav>
+          <!--
+            One toggle rather than a pair of tabs: the panel is a conversation
+            with a settings drawer behind it, not an app with two screens.
+          -->
+          <button
+            type="button"
+            id="panel-settings"
+            class="icon-button"
+            aria-pressed="false"
+            aria-label="Settings"
+            title="Settings"
+          >
+            <!-- Inline pixel-grid gear: no icon font, no remote asset. -->
+            <svg viewBox="0 0 11 11" width="14" height="14" aria-hidden="true" focusable="false">
+              <path
+                fill="currentColor"
+                d="M4 0h3v2H4zM1 1h2v2H1zM8 1h2v2H8zM0 4h2v3H0zM9 4h2v3H9zM4 3h3v1H4zM3 4h1v3H3zM7 4h1v3H7zM4 7h3v1H4zM1 8h2v2H1zM8 8h2v2H8zM4 9h3v2H4z"
+              />
+            </svg>
+          </button>
           <button
             type="button"
             id="panel-home"
@@ -77,7 +89,7 @@
               class="composer__input"
               type="text"
               maxlength="500"
-              placeholder="Type how you're doing…"
+              placeholder="Say anything. Enter to send."
               aria-label="Message your companion"
             />
             <button type="button" id="mic" class="icon-button icon-button--mic" aria-label="Speak">
@@ -92,100 +104,148 @@
             <button type="submit" class="button button--send">Send</button>
           </form>
           <p class="disclaimer">
-            Emotional support and accountability only. Not therapy, medical, or crisis care.
+            A friend on your desktop. Not therapy, medical, or crisis care. Nothing you type is
+            saved.
           </p>
         </div>
 
         <div id="settings-view" class="view" hidden>
           <div class="settings">
-            <fieldset class="group">
-              <legend>Names</legend>
+            <!--
+              Check-ins come first because they are the thing the companion
+              actually does to you. Every row is one plain-language sentence:
+              a switch, what it will ask, and when.
+            -->
+            <section class="group">
+              <h2 class="group__title">What I check in about</h2>
+              <label class="check check--lead">
+                <input type="checkbox" id="set-checkins-enabled" />
+                <span>Check in on me during the day</span>
+              </label>
+
+              <div class="slots" id="checkin-slots">
+                <div class="slot">
+                  <label class="check">
+                    <input type="checkbox" id="set-morning-enabled" />
+                    <span>Say good morning</span>
+                  </label>
+                  <input type="time" id="set-morning-time" aria-label="Morning check-in time" />
+                </div>
+
+                <div class="slot">
+                  <label class="check">
+                    <input type="checkbox" id="set-gym-enabled" />
+                    <span>Ask if I went to the gym</span>
+                  </label>
+                  <input type="time" id="set-gym-time" aria-label="Gym check-in time" />
+                  <!-- Day buttons are built from the shared day labels. -->
+                  <div class="days" id="gym-days" role="group" aria-label="Gym days"></div>
+                </div>
+
+                <div class="slot">
+                  <label class="check">
+                    <input type="checkbox" id="set-life-enabled" />
+                    <span>Ask about my day</span>
+                  </label>
+                  <input type="time" id="set-life-time" aria-label="Day check-in time" />
+                </div>
+
+                <div class="slot">
+                  <label class="check">
+                    <input type="checkbox" id="set-evening-enabled" />
+                    <span>Wind down at night</span>
+                  </label>
+                  <input type="time" id="set-evening-time" aria-label="Evening check-in time" />
+                </div>
+
+                <div class="slot">
+                  <label class="check">
+                    <input type="checkbox" id="set-interval-enabled" />
+                    <span>Just say hi every</span>
+                  </label>
+                  <span class="slot__inline">
+                    <input
+                      type="number"
+                      id="set-interval-minutes"
+                      min="5"
+                      max="1440"
+                      step="5"
+                      aria-label="Minutes between hellos"
+                    />
+                    <span class="unit">min</span>
+                  </span>
+                </div>
+              </div>
+              <p class="hint">
+                A "no" is always a fine answer. Nothing is scored, counted, or kept.
+              </p>
+            </section>
+
+            <section class="group">
+              <h2 class="group__title">Names</h2>
               <label class="field">
-                <span>Your name</span>
+                <span>Call me</span>
                 <input type="text" id="set-user-name" maxlength="40" placeholder="(optional)" />
               </label>
               <label class="field">
-                <span>Companion name</span>
+                <span>My name is</span>
                 <input type="text" id="set-companion-name" maxlength="24" />
               </label>
-            </fieldset>
+            </section>
 
-            <fieldset class="group">
-              <legend>Check-ins</legend>
-              <label class="field field--toggle">
-                <input type="checkbox" id="set-checkins-enabled" />
-                <span>Enable check-ins</span>
+            <section class="group">
+              <h2 class="group__title">On screen</h2>
+              <label class="field">
+                <span>Size</span>
+                <input type="range" id="set-scale" min="1" max="3" step="0.5" />
               </label>
-              <label class="field field--toggle">
-                <input type="checkbox" id="set-morning-enabled" />
-                <span>Morning</span>
-                <input type="time" id="set-morning-time" />
+              <label class="check">
+                <input type="checkbox" id="set-always-on-top" />
+                <span>Stay in front of other windows</span>
               </label>
-              <label class="field field--toggle">
-                <input type="checkbox" id="set-evening-enabled" />
-                <span>Evening</span>
-                <input type="time" id="set-evening-time" />
-              </label>
-              <label class="field field--toggle">
-                <input type="checkbox" id="set-interval-enabled" />
-                <span>Every</span>
-                <input type="number" id="set-interval-minutes" min="5" max="1440" step="5" />
-                <span class="unit">min</span>
-              </label>
-            </fieldset>
+              <div class="settings__actions">
+                <button type="button" id="home-corner" class="button button--quiet">
+                  Put me back in the corner
+                </button>
+              </div>
+              <p class="hint">
+                Drag me anywhere and I stay there. Right-click me to send me home too.
+              </p>
+            </section>
 
-            <fieldset class="group">
-              <legend>Voice</legend>
-              <label class="field field--toggle">
+            <!--
+              Everything below here is optional or environment-dependent, so it
+              stays folded away: the settings a user needs are the ones above.
+            -->
+            <details class="group group--fold">
+              <summary class="group__title">Voice, local model, and privacy</summary>
+
+              <h3 class="group__sub">Speaking out loud</h3>
+              <label class="check">
                 <input type="checkbox" id="set-speak-replies" />
-                <span>Speak replies aloud</span>
+                <span>Read my replies aloud</span>
               </label>
               <label class="field">
                 <span>Voice</span>
                 <select id="set-voice-name"></select>
               </label>
               <label class="field">
-                <span>Rate</span>
+                <span>Speed</span>
                 <input type="range" id="set-voice-rate" min="0.5" max="2" step="0.1" />
               </label>
-              <label class="field field--toggle">
+              <label class="check">
                 <input type="checkbox" id="set-mic-enabled" />
-                <span>Show microphone button</span>
+                <span>Show the microphone button</span>
               </label>
               <p class="hint" id="voice-hint"></p>
-            </fieldset>
 
-            <fieldset class="group">
-              <legend>Appearance</legend>
-              <label class="field">
-                <span>Size</span>
-                <input type="range" id="set-scale" min="1" max="3" step="0.5" />
-              </label>
-              <label class="field field--toggle">
-                <input type="checkbox" id="set-always-on-top" />
-                <span>Always on top</span>
-              </label>
-              <div class="field">
-                <span>Position</span>
-                <button type="button" id="home-corner" class="button button--quiet">
-                  Return to corner
-                </button>
-              </div>
+              <h3 class="group__sub">Your own local model</h3>
               <p class="hint">
-                Drag the character to move it anywhere; it stays where you leave it. Return to
-                corner puts it back in the bottom-right, and you can also right-click the
-                character to send it home.
+                By default I reply from simple rules built into the app, running on this machine.
+                No cloud service is involved and nothing is sent anywhere. If you already run
+                Ollama, llama.cpp, or LM Studio yourself, you can point me at it.
               </p>
-            </fieldset>
-
-            <fieldset class="group">
-              <legend>Optional local model</legend>
-              <p class="hint">
-                By default your companion replies from a built-in rule-based responder that runs
-                entirely on this machine. It is not Claude, ChatGPT, the Claude/Codex CLI, or any
-                other cloud service, and it never sends anything anywhere.
-              </p>
-              <label class="field field--toggle">
+              <label class="check">
                 <input type="checkbox" id="set-model-enabled" />
                 <span>Use a local model server</span>
               </label>
@@ -197,20 +257,14 @@
                 <span>Model</span>
                 <input type="text" id="set-model-name" spellcheck="false" />
               </label>
-              <p class="hint">
-                Off by default. Point this at Ollama, llama.cpp, or LM Studio on your own machine.
-                If it is off or unreachable, the built-in offline replies are used.
-              </p>
-            </fieldset>
 
-            <fieldset class="group">
-              <legend>Privacy</legend>
+              <h3 class="group__sub">Privacy</h3>
               <p class="hint">
-                No accounts, no telemetry, no cloud. Settings live in
-                <code id="data-dir">…</code>. Conversations are kept in memory only and are
-                never written to disk.
+                No accounts, no telemetry, no cloud. Your settings live in
+                <code id="data-dir">…</code>. What we say to each other is kept in memory only
+                and is never written to disk.
               </p>
-            </fieldset>
+            </details>
 
             <div class="settings__actions">
               <button type="button" id="quit" class="button button--quiet">Quit companion</button>

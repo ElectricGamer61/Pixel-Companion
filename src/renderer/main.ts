@@ -1,9 +1,12 @@
 import './styles.css';
 
+import { DAY_LABELS, normalizeDays } from '../shared/checkins';
+import { DEFAULT_SETTINGS } from '../shared/defaults';
 import { homeLine, openingLine, respond, systemPrompt } from '../shared/responder';
 import type {
   AppSettings,
   CheckInEvent,
+  CheckInTopic,
   CompanionMood,
   CompanionReply,
   PlacementEvent,
@@ -37,8 +40,7 @@ const dom = {
   panelClose: element<HTMLButtonElement>('panel-close'),
   panelHome: element<HTMLButtonElement>('panel-home'),
   homeCorner: element<HTMLButtonElement>('home-corner'),
-  tabChat: element<HTMLButtonElement>('tab-chat'),
-  tabSettings: element<HTMLButtonElement>('tab-settings'),
+  panelSettings: element<HTMLButtonElement>('panel-settings'),
   chatView: element('chat-view'),
   settingsView: element('settings-view'),
   log: element('log'),
@@ -55,6 +57,8 @@ const dom = {
   panelQuit: element<HTMLButtonElement>('panel-quit'),
   dataDir: element('data-dir'),
   voiceHint: element('voice-hint'),
+  checkInSlots: element('checkin-slots'),
+  gymDays: element('gym-days'),
 };
 
 const character = new Character(dom.sprite);
@@ -78,6 +82,30 @@ let atHome = false;
 let hovering = false;
 /** Rotates the little home lines so the same one is not always on show. */
 let peekTurn = 0;
+/**
+ * The buddy check-in the companion asked most recently, so a bare "yeah" or
+ * "not today" is read as an answer to it. In memory for one reply only, and
+ * never persisted — it is part of the conversation, and conversations are not
+ * written to disk.
+ *
+ * It also expires: the question has to still be on screen for a bare "yeah" to
+ * be an answer to it, so the topic dies with the bubble that carried it and, as
+ * a backstop for the panel, after `TOPIC_TTL_MS`.
+ */
+const TOPIC_TTL_MS = 10 * 60_000;
+let openTopic: CheckInTopic | null = null;
+let openTopicUntil = 0;
+
+function setOpenTopic(topic: CheckInTopic | null): void {
+  openTopic = topic;
+  openTopicUntil = topic ? Date.now() + TOPIC_TTL_MS : 0;
+}
+
+/** The check-in still awaiting an answer, or undefined once it has gone stale. */
+function currentTopic(): CheckInTopic | undefined {
+  if (openTopic && Date.now() > openTopicUntil) setOpenTopic(null);
+  return openTopic ?? undefined;
+}
 
 /* ------------------------------------------------------------- mood ----- */
 
@@ -345,12 +373,19 @@ function showTyping(): HTMLElement {
   return node;
 }
 
-function context(): { companionName: string; userName: string; turn: number; hour: number } {
+function context(): {
+  companionName: string;
+  userName: string;
+  turn: number;
+  hour: number;
+  topic?: CheckInTopic;
+} {
   return {
     companionName: settings.companionName,
     userName: settings.userName,
     turn,
     hour: new Date().getHours(),
+    topic: currentTopic(),
   };
 }
 
@@ -387,6 +422,8 @@ async function send(raw: string): Promise<void> {
   // The offline rules always run: they are the default engine, and their
   // safety classification takes priority over anything a model might say.
   const offline = respond(text, context());
+  // The check-in has been answered; the next message is its own message again.
+  setOpenTopic(null);
   holdMood('thinking', 30_000);
   const typing = showTyping();
 
@@ -428,9 +465,15 @@ function setPanelOpen(open: boolean): void {
   if (open) {
     dom.bubble.hidden = true;
     hidePeek();
+    // Opening the companion always lands on the conversation, whatever was on
+    // screen when it was last closed.
+    showSettings(false);
     if (!greeted) {
       greeted = true;
       appendMessage(openingLine(context()), 'them');
+      // Said once, in plain words: what this thing will actually do to you, and
+      // where to change it. Otherwise the first check-in arrives unannounced.
+      appendMessage(buddyIntro(), 'system');
     }
     window.setTimeout(() => dom.input.focus(), 0);
   } else {
@@ -442,6 +485,17 @@ function setPanelOpen(open: boolean): void {
   settleMood();
 }
 
+/** The one-line description of what the companion will ask about, unprompted. */
+function buddyIntro(): string {
+  const { checkIns } = settings;
+  if (!checkIns.enabled) return 'Check-ins are off, so I will only talk when you talk to me.';
+  const asks: string[] = [];
+  if (checkIns.gymEnabled) asks.push('whether you got moving');
+  if (checkIns.lifeEnabled) asks.push('what you did with your day');
+  if (asks.length === 0) return 'I will check in on you now and then. Settings decides when.';
+  return `I will check in and ask ${asks.join(' and ')}. Change that any time in settings.`;
+}
+
 function togglePanel(): void {
   setPanelOpen(!panelOpen);
 }
@@ -450,26 +504,41 @@ dom.panelClose.addEventListener('click', () => setPanelOpen(false));
 dom.panelHome.addEventListener('click', () => returnHome());
 dom.homeCorner.addEventListener('click', () => returnHome());
 
-function showTab(tab: 'chat' | 'settings'): void {
-  const chat = tab === 'chat';
-  dom.chatView.hidden = !chat;
-  dom.settingsView.hidden = chat;
-  dom.tabChat.classList.toggle('is-active', chat);
-  dom.tabSettings.classList.toggle('is-active', !chat);
-  dom.tabChat.setAttribute('aria-pressed', String(chat));
-  dom.tabSettings.setAttribute('aria-pressed', String(!chat));
+let settingsOpen = false;
+
+/** Settings is a drawer over the conversation, not a second app screen. */
+function showSettings(open: boolean): void {
+  settingsOpen = open;
+  dom.chatView.hidden = open;
+  dom.settingsView.hidden = !open;
+  dom.panelSettings.classList.toggle('is-active', open);
+  dom.panelSettings.setAttribute('aria-pressed', String(open));
+  const label = open ? 'Back to the conversation' : 'Settings';
+  dom.panelSettings.setAttribute('aria-label', label);
+  dom.panelSettings.title = label;
+  if (!open) window.setTimeout(() => dom.input.focus(), 0);
 }
 
-dom.tabChat.addEventListener('click', () => showTab('chat'));
-dom.tabSettings.addEventListener('click', () => showTab('settings'));
+dom.panelSettings.addEventListener('click', () => showSettings(!settingsOpen));
 
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && panelOpen) setPanelOpen(false);
+  if (event.key !== 'Escape' || !panelOpen) return;
+  // Escape backs out one step at a time: settings first, then the panel.
+  if (settingsOpen) showSettings(false);
+  else setPanelOpen(false);
 });
 
 /* --------------------------------------------------------------- bubble - */
 
 let bubbleTimer: number | null = null;
+
+function hideBubble(): void {
+  dom.bubble.hidden = true;
+  if (bubbleTimer !== null) {
+    window.clearTimeout(bubbleTimer);
+    bubbleTimer = null;
+  }
+}
 
 function showBubble(text: string, ms = 22_000): void {
   hidePeek();
@@ -477,13 +546,19 @@ function showBubble(text: string, ms = 22_000): void {
   dom.bubble.hidden = false;
   if (bubbleTimer !== null) window.clearTimeout(bubbleTimer);
   bubbleTimer = window.setTimeout(() => {
+    bubbleTimer = null;
     dom.bubble.hidden = true;
+    // The question has gone off screen unanswered, so there is nothing left for
+    // a bare "yeah" hours later to be an answer to.
+    setOpenTopic(null);
   }, ms);
 }
 
 dom.bubble.addEventListener('click', () => {
   const text = dom.bubble.textContent ?? '';
-  dom.bubble.hidden = true;
+  // Cancel the auto-hide: the question moves into the panel, so it is still the
+  // thing being answered.
+  hideBubble();
   setPanelOpen(true);
   if (text) {
     appendMessage(text, 'them');
@@ -493,6 +568,10 @@ dom.bubble.addEventListener('click', () => {
 
 function onCheckIn(event: CheckInEvent): void {
   markInteraction();
+  // A gym or life check-in is a question with a yes/no shape, so remember which
+  // one was asked: it is the difference between "nope" landing as an answer and
+  // landing as nothing at all.
+  setOpenTopic(event.kind === 'gym' || event.kind === 'life' ? event.kind : null);
   holdMood(event.kind === 'evening' ? 'listening' : 'happy');
   if (panelOpen) {
     appendMessage(event.message, 'them');
@@ -547,6 +626,10 @@ const fields = {
   morningTime: element<HTMLInputElement>('set-morning-time'),
   eveningEnabled: element<HTMLInputElement>('set-evening-enabled'),
   eveningTime: element<HTMLInputElement>('set-evening-time'),
+  gymEnabled: element<HTMLInputElement>('set-gym-enabled'),
+  gymTime: element<HTMLInputElement>('set-gym-time'),
+  lifeEnabled: element<HTMLInputElement>('set-life-enabled'),
+  lifeTime: element<HTMLInputElement>('set-life-time'),
   intervalEnabled: element<HTMLInputElement>('set-interval-enabled'),
   intervalMinutes: element<HTMLInputElement>('set-interval-minutes'),
   speakReplies: element<HTMLInputElement>('set-speak-replies'),
@@ -560,6 +643,47 @@ const fields = {
   modelName: element<HTMLInputElement>('set-model-name'),
 };
 
+/**
+ * The gym day picker, built from the shared day labels so the buttons can never
+ * drift out of step with how `gymDays` is stored.
+ */
+const dayChips: HTMLButtonElement[] = [];
+
+function buildDayChips(): void {
+  dom.gymDays.replaceChildren();
+  dayChips.length = 0;
+  DAY_LABELS.forEach((label, index) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'day';
+    chip.textContent = label.slice(0, 1);
+    chip.title = label;
+    chip.setAttribute('aria-label', label);
+    chip.setAttribute('aria-pressed', 'false');
+    chip.addEventListener('click', () => {
+      const on = chip.getAttribute('aria-pressed') !== 'true';
+      chip.setAttribute('aria-pressed', String(on));
+      chip.classList.toggle('is-on', on);
+      // Clearing the last day is how someone says "stop asking me about the
+      // gym", so say it out loud on the toggle instead of quietly refilling
+      // the week behind their back.
+      if (selectedDays() === '') fields.gymEnabled.checked = false;
+      void persist();
+    });
+    dom.gymDays.append(chip);
+    dayChips[index] = chip;
+  });
+}
+
+/** Read the chips back into the stored `0`-`6` string. */
+function selectedDays(): string {
+  return normalizeDays(
+    dayChips
+      .map((chip, index) => (chip.getAttribute('aria-pressed') === 'true' ? String(index) : ''))
+      .join(''),
+  );
+}
+
 function fillSettingsForm(): void {
   fields.userName.value = settings.userName;
   fields.companionName.value = settings.companionName;
@@ -568,6 +692,15 @@ function fillSettingsForm(): void {
   fields.morningTime.value = settings.checkIns.morningTime;
   fields.eveningEnabled.checked = settings.checkIns.eveningEnabled;
   fields.eveningTime.value = settings.checkIns.eveningTime;
+  fields.gymEnabled.checked = settings.checkIns.gymEnabled;
+  fields.gymTime.value = settings.checkIns.gymTime;
+  fields.lifeEnabled.checked = settings.checkIns.lifeEnabled;
+  fields.lifeTime.value = settings.checkIns.lifeTime;
+  dayChips.forEach((chip, index) => {
+    const on = settings.checkIns.gymDays.includes(String(index));
+    chip.setAttribute('aria-pressed', String(on));
+    chip.classList.toggle('is-on', on);
+  });
   fields.intervalEnabled.checked = settings.checkIns.intervalEnabled;
   fields.intervalMinutes.value = String(settings.checkIns.intervalMinutes);
   fields.speakReplies.checked = settings.voice.speakReplies;
@@ -582,6 +715,7 @@ function fillSettingsForm(): void {
 
 async function persist(): Promise<void> {
   const minutes = Number(fields.intervalMinutes.value);
+  const gymDays = selectedDays();
   settings = await bridge.saveSettings({
     userName: fields.userName.value.trim(),
     companionName: fields.companionName.value.trim() || 'Pip',
@@ -590,11 +724,21 @@ async function persist(): Promise<void> {
     checkIns: {
       enabled: fields.checkInsEnabled.checked,
       morningEnabled: fields.morningEnabled.checked,
-      morningTime: fields.morningTime.value || '09:00',
+      // A cleared time field falls back to the shipped default rather than a
+      // literal, so the two can never drift apart.
+      morningTime: fields.morningTime.value || DEFAULT_SETTINGS.checkIns.morningTime,
       eveningEnabled: fields.eveningEnabled.checked,
-      eveningTime: fields.eveningTime.value || '21:00',
+      eveningTime: fields.eveningTime.value || DEFAULT_SETTINGS.checkIns.eveningTime,
+      gymEnabled: fields.gymEnabled.checked,
+      gymTime: fields.gymTime.value || DEFAULT_SETTINGS.checkIns.gymTime,
+      gymDays,
+      lifeEnabled: fields.lifeEnabled.checked,
+      lifeTime: fields.lifeTime.value || DEFAULT_SETTINGS.checkIns.lifeTime,
       intervalEnabled: fields.intervalEnabled.checked,
-      intervalMinutes: Number.isFinite(minutes) && minutes >= 5 ? Math.round(minutes) : 120,
+      intervalMinutes:
+        Number.isFinite(minutes) && minutes >= 5
+          ? Math.round(minutes)
+          : DEFAULT_SETTINGS.checkIns.intervalMinutes,
     },
     voice: {
       speakReplies: fields.speakReplies.checked,
@@ -621,6 +765,12 @@ function applySettings(): void {
   updateMicVisibility();
   fillSettingsForm();
   fields.voiceName.value = settings.voice.voiceName;
+  // One master switch that visibly owns the rows under it, so "check-ins are
+  // off" never has to be worked out by reading five separate toggles.
+  dom.checkInSlots.classList.toggle('is-off', !settings.checkIns.enabled);
+  for (const node of dom.checkInSlots.querySelectorAll('input, button')) {
+    (node as HTMLInputElement | HTMLButtonElement).disabled = !settings.checkIns.enabled;
+  }
 }
 
 function updateMicVisibility(): void {
@@ -675,8 +825,9 @@ function populateVoices(): void {
 
 async function boot(): Promise<void> {
   settings = await bridge.getSettings();
+  buildDayChips();
   applySettings();
-  showTab('chat');
+  showSettings(false);
   character.start();
   applyMood('idle');
 
