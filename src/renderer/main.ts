@@ -664,6 +664,10 @@ function buildDayChips(): void {
       const on = chip.getAttribute('aria-pressed') !== 'true';
       chip.setAttribute('aria-pressed', String(on));
       chip.classList.toggle('is-on', on);
+      // Clearing the last day is how someone says "stop asking me about the
+      // gym", so say it out loud on the toggle instead of quietly refilling
+      // the week behind their back.
+      if (selectedDays() === '') fields.gymEnabled.checked = false;
       void persist();
     });
     dom.gymDays.append(chip);
@@ -725,11 +729,7 @@ async function persist(): Promise<void> {
       morningTime: fields.morningTime.value || DEFAULT_SETTINGS.checkIns.morningTime,
       eveningEnabled: fields.eveningEnabled.checked,
       eveningTime: fields.eveningTime.value || DEFAULT_SETTINGS.checkIns.eveningTime,
-      // Clearing every day means "stop asking me". Saying so by switching the
-      // toggle off is honest; leaving it on would let mergeSettings repair the
-      // empty selection back to weekdays and repaint the chips the user just
-      // cleared.
-      gymEnabled: fields.gymEnabled.checked && gymDays !== '',
+      gymEnabled: fields.gymEnabled.checked,
       gymTime: fields.gymTime.value || DEFAULT_SETTINGS.checkIns.gymTime,
       gymDays,
       lifeEnabled: fields.lifeEnabled.checked,

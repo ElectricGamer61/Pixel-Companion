@@ -90,10 +90,14 @@ export function mergeSettings(stored: unknown): AppSettings {
     24 * 60,
     Math.max(5, Math.round(base.checkIns.intervalMinutes)),
   );
-  // A gym check-in with no days left would be silently dead, which reads as a
-  // broken toggle rather than a choice; fall back to the weekday default.
-  base.checkIns.gymDays =
-    normalizeDays(base.checkIns.gymDays) || DEFAULT_SETTINGS.checkIns.gymDays;
+  // A gym check-in that is on but has no days left would be silently dead,
+  // which reads as a broken toggle rather than a choice; fall back to the
+  // weekday default. Switched off, an empty selection is exactly what the user
+  // said, so it stands and the day picker keeps showing what they cleared.
+  base.checkIns.gymDays = normalizeDays(base.checkIns.gymDays);
+  if (base.checkIns.gymEnabled && base.checkIns.gymDays === '') {
+    base.checkIns.gymDays = DEFAULT_SETTINGS.checkIns.gymDays;
+  }
   base.voice.rate = Math.min(2, Math.max(0.5, base.voice.rate));
   base.voice.volume = Math.min(1, Math.max(0, base.voice.volume));
   base.model.timeoutMs = Math.min(120000, Math.max(1000, Math.round(base.model.timeoutMs)));

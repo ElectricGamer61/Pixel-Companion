@@ -175,6 +175,15 @@ describe('evaluateCheckIns', () => {
     expect(next.events.map((e) => e.kind)).toEqual(['life']);
   });
 
+  it('is not silenced forever by a timestamp from the future', () => {
+    // A clock moved back, or a state file carried from another machine, must
+    // not leave the companion mute until wall-clock time catches up.
+    const tomorrow = at(15, 5, 15).getTime();
+    const result = evaluateCheckIns(at(15, 5), settings(), state({ lastDailyAt: tomorrow }));
+    expect(result.events.map((e) => e.kind)).toEqual(['life']);
+    expect(result.state.lastDailyAt).toBe(at(15, 5).getTime());
+  });
+
   it('spaces the shipped daily defaults so none of them is silently swallowed', () => {
     // Because only the latest due check-in fires and the rest are marked done,
     // two default slots inside one grace window would mean the earlier question

@@ -82,6 +82,19 @@ describe('mergeSettings', () => {
     expect(mergeSettings({ checkIns: { gymDays: '60' } } as never).checkIns.gymDays).toBe('06');
   });
 
+  it('leaves a cleared day picker cleared once the gym check-in is off', () => {
+    // Switched off there is no dead toggle to repair, and refilling the week
+    // would undo the clicks that cleared it.
+    expect(
+      mergeSettings({ checkIns: { gymEnabled: false, gymDays: '' } } as never).checkIns.gymDays,
+    ).toBe('');
+    expect(
+      applySettingsPatch(DEFAULT_SETTINGS, {
+        checkIns: { ...DEFAULT_SETTINGS.checkIns, gymEnabled: false, gymDays: '' },
+      }).checkIns.gymDays,
+    ).toBe('');
+  });
+
   it('round-trips a saved file', () => {
     const saved = mergeSettings({ userName: 'Ada', scale: 2 });
     expect(mergeSettings(JSON.parse(JSON.stringify(saved)))).toEqual(saved);

@@ -185,7 +185,7 @@ export function evaluateCheckIns(
    */
   const sinceLastDaily =
     next.lastDailyAt === null ? Infinity : (now.getTime() - next.lastDailyAt) / 60_000;
-  if (due.length > 0 && sinceLastDaily >= DAILY_SPACING_MINUTES) {
+  if (due.length > 0 && (sinceLastDaily < 0 || sinceLastDaily >= DAILY_SPACING_MINUTES)) {
     const winner = due.reduce((best, item) => (item.scheduled > best.scheduled ? item : best));
     events.push({
       kind: winner.entry.kind,
