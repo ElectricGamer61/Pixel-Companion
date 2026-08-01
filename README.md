@@ -472,8 +472,9 @@ Deliberately out of scope for this first MVP, in rough priority order:
    deb, dmg, and NSIS on tag, so nontechnical users never see a terminal.
 3. **Launch at login** — an opt-in toggle using Electron's
    `setLoginItemSettings`.
-4. **Richer accountability** — named goals and streaks, still local-only, with an
-   explicit opt-in before anything is written to disk.
+4. **Richer accountability** — named goals you choose, still local-only, with an
+   explicit opt-in before anything is written to disk. Never streaks, counts, or
+   scores: saying "no" has to stay free.
 5. **More expressions and a second character** — the grid format makes new faces
    cheap, and the palette is a single object to swap for a recolour.
 6. **User-editable response packs** — let people edit the offline responder's
