@@ -117,7 +117,7 @@
               a switch, what it will ask, and when.
             -->
             <section class="group">
-              <h2 class="group__title">What I check in about</h2>
+              <h2 class="group__title">Check-ins</h2>
               <label class="check check--lead">
                 <input type="checkbox" id="set-checkins-enabled" />
                 <span>Check in on me during the day</span>
@@ -181,6 +181,24 @@
               </p>
             </section>
 
+            <!--
+              Voice is a normal, everyday choice, so it sits in the open with
+              two plain switches. Anything that depends on what this machine
+              happens to have installed lives in Advanced instead.
+            -->
+            <section class="group">
+              <h2 class="group__title">Voice</h2>
+              <label class="check">
+                <input type="checkbox" id="set-speak-replies" />
+                <span>Read my replies out loud</span>
+              </label>
+              <label class="check">
+                <input type="checkbox" id="set-mic-enabled" />
+                <span>Show the microphone button</span>
+              </label>
+              <p class="hint" id="voice-hint"></p>
+            </section>
+
             <section class="group">
               <h2 class="group__title">Names</h2>
               <label class="field">
@@ -217,14 +235,18 @@
               Everything below here is optional or environment-dependent, so it
               stays folded away: the settings a user needs are the ones above.
             -->
-            <details class="group group--fold">
-              <summary class="group__title">Voice, local model, and privacy</summary>
+            <!--
+              Everything below here is optional, technical, or depends on what
+              this machine happens to have installed, so it stays folded away.
+              Nothing in here has to be touched for the app to work.
+            -->
+            <details class="group group--fold" id="advanced">
+              <summary class="group__title">Advanced</summary>
+              <p class="hint">
+                Nothing in here is needed. I work fine without it.
+              </p>
 
-              <h3 class="group__sub">Speaking out loud</h3>
-              <label class="check">
-                <input type="checkbox" id="set-speak-replies" />
-                <span>Read my replies aloud</span>
-              </label>
+              <h3 class="group__sub">How my voice sounds</h3>
               <label class="field">
                 <span>Voice</span>
                 <select id="set-voice-name"></select>
@@ -233,36 +255,60 @@
                 <span>Speed</span>
                 <input type="range" id="set-voice-rate" min="0.5" max="2" step="0.1" />
               </label>
-              <label class="check">
-                <input type="checkbox" id="set-mic-enabled" />
-                <span>Show the microphone button</span>
-              </label>
-              <p class="hint" id="voice-hint"></p>
+              <p class="hint" id="voice-engine-hint"></p>
 
-              <h3 class="group__sub">Your own local model</h3>
+              <h3 class="group__sub">Connect your own AI (optional)</h3>
               <p class="hint">
-                By default I reply from simple rules built into the app, running on this machine.
-                No cloud service is involved and nothing is sent anywhere. If you already run
-                Ollama, llama.cpp, or LM Studio yourself, you can point me at it.
+                Out of the box I answer from simple wording built into the app, on this computer.
+                Nothing is sent anywhere and there is nothing to pay for. If you already run your
+                own AI program on this machine, you can point me at it here.
               </p>
               <label class="check">
                 <input type="checkbox" id="set-model-enabled" />
-                <span>Use a local model server</span>
+                <span>Use my own AI instead</span>
               </label>
               <label class="field">
-                <span>Endpoint</span>
+                <span>Address</span>
                 <input type="text" id="set-model-endpoint" spellcheck="false" />
               </label>
               <label class="field">
-                <span>Model</span>
+                <span>Model name</span>
                 <input type="text" id="set-model-name" spellcheck="false" />
               </label>
-
-              <h3 class="group__sub">Privacy</h3>
+              <label class="field">
+                <span>Access key</span>
+                <input
+                  type="password"
+                  id="set-model-key"
+                  spellcheck="false"
+                  placeholder="(usually not needed)"
+                />
+              </label>
+              <label class="field">
+                <span>Give up after</span>
+                <span class="slot__inline">
+                  <input
+                    type="number"
+                    id="set-model-timeout"
+                    class="number--short"
+                    min="1"
+                    max="120"
+                    step="1"
+                    aria-label="Seconds to wait for your own AI"
+                  />
+                  <span class="unit">sec</span>
+                </span>
+              </label>
               <p class="hint">
-                No accounts, no telemetry, no cloud. Your settings live in
-                <code id="data-dir">…</code>. What we say to each other is kept in memory only
-                and is never written to disk.
+                If it does not answer in time I fall back to my own wording, so a reply always
+                arrives.
+              </p>
+
+              <h3 class="group__sub">Your privacy</h3>
+              <p class="hint">
+                No accounts, no tracking, nothing in the cloud. Your settings live in
+                <code id="data-dir">…</code>. Everything we say to each other stays in memory
+                only and is never written to your disk.
               </p>
             </details>
 

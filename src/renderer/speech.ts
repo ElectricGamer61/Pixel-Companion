@@ -149,7 +149,7 @@ export class SpeechInput {
   start(handlers: SpeechInputHandlers): boolean {
     const Constructor = recognitionConstructor();
     if (!Constructor) {
-      handlers.onError('Speech recognition is not available in this build. Type instead.');
+      handlers.onError('Talking out loud is not available here. Type to me instead.');
       return false;
     }
     if (this.listening) return true;
@@ -176,7 +176,7 @@ export class SpeechInput {
       handlers.onError(
         code === 'not-allowed'
           ? 'Microphone permission was denied.'
-          : `Could not listen (${code}). You can type instead.`,
+          : `I could not hear you (${code}). You can type instead.`,
       );
     };
     recognition.onend = () => {

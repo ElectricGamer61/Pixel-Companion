@@ -82,8 +82,12 @@ These are promises made to users in `README.md`, not preferences:
   `skipTaskbar`, so the OS offers no way out; `#panel-quit` is it.
 - **The panel is a conversation with a settings drawer, not a two-tab app.** `#panel-settings`
   swaps `#chat-view` for `#settings-view`; `Esc` backs out of settings first and only then
-  closes the panel. Settings is plain stacked sections at 380px wide — no nested boxes, and
-  anything optional or environment-dependent belongs in the `<details>` fold at the bottom.
+  closes the panel. Settings is plain stacked sections at 380px wide — no nested boxes — under
+  four headings (Check-ins, Voice, Names, On screen), and anything optional, technical, or
+  environment-dependent belongs in the collapsed `#advanced` `<details>` at the bottom: the
+  model connection, the voice picker and speed, the speech-engine note, and the data directory.
+  `tests/settings-ui.test.ts` reads `index.html` and fails if a power-user control or a piece of
+  technical wording leaks into the default view, since no other test can see the panel.
 - **Click-through is hit-tested per pointer move.** The window covers a rectangle of
   desktop and is `setIgnoreMouseEvents(true, { forward: true })` by default; the renderer
   flips it only while the pointer is over a `[data-interactive]` element. New interactive
