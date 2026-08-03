@@ -500,7 +500,9 @@ body {
 }
 
 .field input[type='text'],
+.field input[type='password'],
 .field input[type='time'],
+.field input[type='number'],
 .slot input[type='time'],
 .slot input[type='number'],
 .field select {
@@ -516,8 +518,14 @@ body {
 }
 
 .field input[type='text'],
+.field input[type='password'],
 .field select {
   flex: 1 1 auto;
+}
+
+/* A count of seconds never needs the width of a whole text field. */
+.number--short {
+  flex: 0 0 58px;
 }
 
 .slot input[type='time'] {

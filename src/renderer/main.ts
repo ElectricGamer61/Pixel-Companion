@@ -57,6 +57,7 @@ const dom = {
   panelQuit: element<HTMLButtonElement>('panel-quit'),
   dataDir: element('data-dir'),
   voiceHint: element('voice-hint'),
+  voiceEngineHint: element('voice-engine-hint'),
   checkInSlots: element('checkin-slots'),
   gymDays: element('gym-days'),
 };
@@ -641,7 +642,12 @@ const fields = {
   modelEnabled: element<HTMLInputElement>('set-model-enabled'),
   modelEndpoint: element<HTMLInputElement>('set-model-endpoint'),
   modelName: element<HTMLInputElement>('set-model-name'),
+  modelKey: element<HTMLInputElement>('set-model-key'),
+  modelTimeout: element<HTMLInputElement>('set-model-timeout'),
 };
+
+/** The wait before falling back, shown in whole seconds rather than in ms. */
+const MODEL_TIMEOUT_STEP_MS = 1000;
 
 /**
  * The gym day picker, built from the shared day labels so the buttons can never
@@ -711,10 +717,15 @@ function fillSettingsForm(): void {
   fields.modelEnabled.checked = settings.model.enabled;
   fields.modelEndpoint.value = settings.model.endpoint;
   fields.modelName.value = settings.model.model;
+  fields.modelKey.value = settings.model.apiKey;
+  fields.modelTimeout.value = String(Math.round(settings.model.timeoutMs / MODEL_TIMEOUT_STEP_MS));
 }
 
 async function persist(): Promise<void> {
   const minutes = Number(fields.intervalMinutes.value);
+  const rawSeconds = Number(fields.modelTimeout.value);
+  const timeoutSeconds =
+    Number.isFinite(rawSeconds) && rawSeconds >= 1 ? Math.round(rawSeconds) : NaN;
   const gymDays = selectedDays();
   settings = await bridge.saveSettings({
     userName: fields.userName.value.trim(),
@@ -751,8 +762,13 @@ async function persist(): Promise<void> {
       enabled: fields.modelEnabled.checked,
       endpoint: fields.modelEndpoint.value.trim(),
       model: fields.modelName.value.trim(),
-      apiKey: settings.model.apiKey,
-      timeoutMs: settings.model.timeoutMs,
+      apiKey: fields.modelKey.value.trim(),
+      // Shown in seconds, stored in milliseconds. A cleared or nonsense box
+      // falls back to the shipped default rather than to zero, which would make
+      // every model reply time out instantly.
+      timeoutMs: Number.isFinite(timeoutSeconds)
+        ? timeoutSeconds * MODEL_TIMEOUT_STEP_MS
+        : DEFAULT_SETTINGS.model.timeoutMs,
     },
   });
   applySettings();
@@ -779,7 +795,7 @@ function updateMicVisibility(): void {
   dom.mic.disabled = !usable;
   dom.mic.title = usable
     ? 'Hold a thought and speak'
-    : 'Speech recognition is not available in this build. Type instead.';
+    : 'Talking out loud is not available here. Type to me instead.';
 }
 
 for (const field of Object.values(fields)) {
@@ -811,16 +827,29 @@ function populateVoices(): void {
   fields.voiceName.value = settings.voice.voiceName;
   fields.voiceName.disabled = voices.length === 0;
 
-  const hints: Record<'web' | 'native' | 'none', string> = {
-    web: 'Using your browser/OS speech voices. Free, offline, no account needed.',
-    native:
-      'Using your operating system speech command (say, PowerShell SAPI, spd-say, or espeak). Free and offline.',
-    none: 'No speech engine was found. On Linux, install speech-dispatcher or espeak-ng to enable spoken replies.',
-  };
+  // Two hints, deliberately split. The one people see says only what they can
+  // act on; the one that names the machinery underneath is folded away in
+  // Advanced, where a technical answer is what someone came looking for.
+  const canSpeak = speechOut.engine !== 'none';
+  // A switch that cannot do anything is worse than no switch: on a machine with
+  // no voice at all, say so in the hint and leave the toggle inert.
+  fields.speakReplies.disabled = !canSpeak;
+  fields.voiceRate.disabled = !canSpeak;
+  const plain = canSpeak
+    ? 'I can talk out loud on this computer. It costs nothing and works offline.'
+    : 'This computer has no voice installed, so I will reply in writing.';
   const micNote = SpeechInput.supported
-    ? ' Microphone input is available.'
-    : ' Microphone input is unavailable in this build, so typing is the input method.';
-  dom.voiceHint.textContent = hints[speechOut.engine] + micNote;
+    ? ' You can talk to me with the microphone button, or just type.'
+    : ' The microphone is not available here, so typing is the way to talk to me.';
+  dom.voiceHint.textContent = plain + micNote;
+
+  const engineHints: Record<'web' | 'native' | 'none', string> = {
+    web: 'Speaking uses the voices built into your browser or system. Free, offline, no account.',
+    native:
+      'Speaking uses your operating system speech command (say, PowerShell SAPI, spd-say, or espeak-ng). Free and offline.',
+    none: 'No speech program was found. On Linux, installing speech-dispatcher or espeak-ng turns spoken replies on.',
+  };
+  dom.voiceEngineHint.textContent = engineHints[speechOut.engine];
 }
 
 async function boot(): Promise<void> {
@@ -845,7 +874,7 @@ async function boot(): Promise<void> {
 
   if (!isDesktop) {
     appendMessage(
-      'Browser preview: the desktop window behaviours (always-on-top, drag, check-in scheduling) only run under Electron.',
+      'Preview mode: this is the companion in a browser tab, so moving me around the desktop and timed check-ins only happen in the real app.',
       'system',
     );
   }

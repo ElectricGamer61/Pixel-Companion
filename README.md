@@ -208,7 +208,7 @@ AI model at all.**
   provider to sign up with.
 - **Optional: your own local model.** If you already run Ollama, llama.cpp, or
   LM Studio, you can point the companion at that endpoint in
-  Settings, under *Voice, local model, and privacy*. It is off by default, it
+  Settings, under *Advanced* → *Connect your own AI*. It is off by default, it
   stays on your machine, and if it is disabled, unreachable, or returns anything
   unusable the app silently falls back to the rule-based responder. See
   [Optional: use a local model](#optional-use-a-local-model).
@@ -273,8 +273,8 @@ cannot be bypassed by a model's output.
 Both directions use free, built-in facilities only. There is no paid STT or TTS
 dependency anywhere in this project.
 
-**Speech output** (enable in Settings, under *Voice, local model, and privacy* →
-*Read my replies aloud*) tries, in order:
+**Speech output** (enable in Settings, under *Voice* →
+*Read my replies out loud*) tries, in order:
 
 1. The Web Speech API (`speechSynthesis`) using your browser/OS voices.
 2. Your operating system's own speech command, run by the main process:
@@ -303,9 +303,9 @@ Making dictation reliable everywhere needs a bundled offline recogniser — see 
 ## Optional: use a local model
 
 Everything above works with no model. If you already run one locally, point the
-companion at it in Settings, under *Voice, local model, and privacy*:
+companion at it in Settings, under *Advanced* → *Connect your own AI*:
 
-| Server | Endpoint |
+| Server | Address |
 | --- | --- |
 | Ollama | `http://localhost:11434/v1/chat/completions` |
 | llama.cpp server | `http://localhost:8080/v1/chat/completions` |
@@ -317,7 +317,7 @@ non-clinical posture as the offline rules.
 
 If the endpoint is disabled, unreachable, slow, or returns anything unusable, the
 app silently falls back to the offline responder. Requests are made from the main
-process, and an API-key field exists for a bring-your-own-key endpoint later —
+process, and the *Access key* field is there for an endpoint that wants one —
 but nothing paid is required, and nothing is sent anywhere unless you switch this
 on yourself.
 
@@ -325,7 +325,7 @@ on yourself.
 
 - **Local only.** Two small JSON files (`settings.json`, `checkin-state.json`) in
   your OS per-user app-data directory. The exact path is shown in
-  Settings, under *Voice, local model, and privacy*.
+  Settings, under *Advanced* → *Your privacy*.
   - Linux: `~/.config/Pixel Companion/`
   - macOS: `~/Library/Application Support/Pixel Companion/`
   - Windows: `%APPDATA%\Pixel Companion\`
